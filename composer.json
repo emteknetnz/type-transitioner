@@ -1,0 +1,25 @@
+{
+    "name": "emteknetnz/type-transitioner",
+    "description": "Type transitioner",
+    "type": "silverstripe-vendormodule",
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "silverstripe/framework": "^4.11"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "emteknetnz\\TypeTransitioner\\": "src/"
+        },
+        "files": [
+            "src/Globals/functions.php"
+        ]
+    },
+    "authors": [
+        {
+            "name": "Steve Boyd",
+            "email": "emteknetnz@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev"
+}
