@@ -89,9 +89,6 @@ if (!function_exists('_scan_methods')) {
                 }
                 $method = $data['method'];
                 $b = preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
-                if (!$b) {
-                    $a=1;
-                }
                 $fncontents = $m[1];
                 preg_match('#( *){#', $fncontents, $m2);
                 $indent = $m2[1];
@@ -104,7 +101,6 @@ if (!function_exists('_scan_methods')) {
                 continue;
             }
             file_put_contents($path, $contents);
-            // echo "Updated $path\n";
         }
     }
 
@@ -155,8 +151,6 @@ if (!function_exists('_scan_methods')) {
     // function _a(string $castType, &$_arg)
     function _a()
     {
-        // return;
-
         global $_ett_method_cache, $_ett_lines;
 
         $outdir = str_replace('//', '/', BASE_PATH . '/artifacts');
@@ -164,8 +158,8 @@ if (!function_exists('_scan_methods')) {
             mkdir($outdir);
         }
         $outpath = "$outdir/ett.txt";
-        if (!file_exists($outpath)) {
-            file_put_contents($outpath, '');
+        if (count($_ett_lines) == 0) {
+            file_put_contents($outpath, '$callingFile, $callingLine, $calledClass, $calledMethod, $var, $paramWhere, $paramType, $argType'. "\n");
         }
 
         $d = debug_backtrace(0, 2);
@@ -176,15 +170,6 @@ if (!function_exists('_scan_methods')) {
         // $callType = $d[1]['type'] ?? '';
         $calledMethod = $d[1]['function'] ?? '';
         $args = $d[1]['args'] ?? [];
-        // print_r([
-        //     $callingFile,
-        //     $callingLine,
-        //     // $calledLine,
-        //     $calledClass,
-        // //    $callType,
-        //     $calledMethod,
-        //     $args
-        // ]);
 
         if (!$calledClass || !$calledMethod) {
             return;
@@ -216,21 +201,12 @@ if (!function_exists('_scan_methods')) {
             $paramWhere = 'method';
             if (array_key_exists($var, $o['docblockParams'])) {
                 $paramType = $o['docblockParams'][$var];
-                if (is_object($arg) && strpos($paramType, '\\') === false && $o['namespace']) {
-                    // ensure is a class starting with uppercase, not something like 'mixed'
-                    if (preg_match('#^[A-Z]#', $paramType)) {
-                        // convert to FQCN
-                        $paramType = $o['namespace'] . '\\' . $paramType;
-                    }
-                }
                 $paramWhere = 'docblock';
             } else {
-                $paramWhere = 'missing';
+                $paramWhere = 'nowhere';
             }
             if (is_null($arg)) {
                 $argType = 'null';
-            } elseif (is_object($arg)) {
-                $argType = get_class($arg);
             } elseif (is_string($arg)) {
                 $argType = 'string';
             } elseif (is_int($arg)) {
@@ -239,21 +215,17 @@ if (!function_exists('_scan_methods')) {
                 $argType = 'float';
             } elseif (is_array($arg)) {
                 $argType = 'array';
+            } elseif (is_bool($arg)) {
+                $argType = 'bool';
+            } elseif (is_object($arg)) {
+                $argType = get_class($arg);
             } else {
                 $argType = 'unknown';
             }
+            // correctly documented, no need to log
             if ($argType == $paramType) {
                 continue;
             }
-            if ($paramWhere == 'docblock' && is_object($arg)) {
-                // is the docblock type an interface or parent class?
-                $subclasses = ClassInfo::subclassesFor($paramType);
-                // TODO:
-                // echo "Subclasses are:\n";
-                // var_dump($paramType);
-                // print_r($subclasses);die;
-            }
-            // headers set in /app/_config.php
             $line = implode(',', [$callingFile, $callingLine, $calledClass, $calledMethod, $var, $paramWhere, $paramType, $argType]);
             if (array_key_exists($line, $_ett_lines)) {
                 continue;
