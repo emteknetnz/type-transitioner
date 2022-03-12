@@ -50,12 +50,21 @@ function _scan_methods()
         // print_r($methodData);
         /** @var array $m */
         foreach ($methodData as $data) {
+            $as = [];
+            foreach ($data['methodParams'] as $var => $type) {
+                if ($type != 'dynamic') {
+                    continue;
+                }
+                $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
+                $as[] = "_a('{$docblockType}', &{$var});";
+            }
             $method = $data['method'];
             preg_match("#(?s)(function {$method}.+)#", $contents, $m);
             $fncontents = $m[1];
             preg_match('#( *){#', $fncontents, $m2);
             $indent = $m2[1];
-            $newfncontents = preg_replace('#{#', "{\n$indent    _a('dynamic', 'test');", $fncontents, 1);
+            $aStr = implode("\n{$indent}    ", $as);
+            $newfncontents = preg_replace('#{#', "{\n$indent    $aStr", $fncontents, 1);
             $contents = str_replace($fncontents, $newfncontents, $contents);
         }
 
