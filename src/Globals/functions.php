@@ -7,6 +7,55 @@ use SilverStripe\Core\Manifest\ClassManifest;
 
 // this will get included twice
 if (!function_exists('_scan_methods')) {
+
+    function _analyse_data()
+    {
+        $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
+        // remove header
+        array_shift($lines);
+
+        $res = [];
+
+        foreach ($lines as $line) {
+            if (empty($line)) {
+                continue;
+            }
+            $data = explode(',', $line);
+            list(
+                $callingFile,
+                $callingLine,
+                $calledClass,
+                $calledMethod,
+                $var,
+                $paramWhere,
+                $paramType,
+                $argType
+            ) = $data;
+            $match = false;
+            if ($paramType == 'mixed') {
+                continue;
+            }
+            foreach (explode('|', $paramType) as $pType) {
+                // paramType (docblock) is usually not a FQCN
+                if ($pType == $argType || preg_match("#\\{$pType}$#", $argType)) {
+                    $match = true;
+                    break;
+                }
+            }
+            if ($match) {
+                continue;
+            }
+            $param = "({$paramType}) {$var}";
+            $res[$calledClass][$calledMethod][$param] ??= [];
+            $call = "({$argType}) {$callingFile}:{$callingLine}";
+            if (!in_array($call, $res[$calledClass][$calledMethod][$param])) {
+                $res[$calledClass][$calledMethod][$param][] = $call;
+            }
+        }
+        print_r($res);die;
+        die;
+    }
+
     function _scan_methods()
     {
         $path = __DIR__ . '/../../../../silverstripe/framework/src/includes/constants.php';
@@ -151,6 +200,8 @@ if (!function_exists('_scan_methods')) {
     // function _a(string $castType, &$_arg)
     function _a()
     {
+        return ;
+
         global $_ett_method_cache, $_ett_lines;
 
         $outdir = str_replace('//', '/', BASE_PATH . '/artifacts');
@@ -217,6 +268,8 @@ if (!function_exists('_scan_methods')) {
                 $argType = 'array';
             } elseif (is_bool($arg)) {
                 $argType = 'bool';
+            } elseif (is_callable($arg)) {
+                $argType = 'callable';
             } elseif (is_object($arg)) {
                 $argType = get_class($arg);
             } else {
