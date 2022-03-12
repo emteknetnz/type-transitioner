@@ -31,12 +31,15 @@ if (!function_exists('_scan_methods')) {
                 $paramType,
                 $argType
             ) = $data;
-            $match = false;
+            // dockblock param is mixed, so arg can be anything
             if ($paramType == 'mixed') {
                 continue;
             }
+            // see if docblock param matched arg
+            $match = false;
             foreach (explode('|', $paramType) as $pType) {
                 // paramType (docblock) is usually not a FQCN
+                $pType = preg_replace('#[^A-Za-z0-9_]#', '', $pType);
                 if ($pType == $argType || preg_match("#\\{$pType}$#", $argType)) {
                     $match = true;
                     break;
@@ -45,6 +48,7 @@ if (!function_exists('_scan_methods')) {
             if ($match) {
                 continue;
             }
+            // dockblock param (include undocblocked param) does not match arg
             $param = "({$paramType}) {$var}";
             $res[$calledClass][$calledMethod][$param] ??= [];
             $call = "({$argType}) {$callingFile}:{$callingLine}";
@@ -133,8 +137,9 @@ if (!function_exists('_scan_methods')) {
                     if ($type != 'dynamic') {
                         continue;
                     }
+                    $hasDefault = $data['methodParamsHasDefault'][$var] ? ', true' : '';
                     $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
-                    $as[] = "_a('{$docblockType}', {$var});";
+                    $as[] = "_a('{$docblockType}', {$var}{$hasDefault});";
                 }
                 $method = $data['method'];
                 $b = preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
@@ -165,7 +170,20 @@ if (!function_exists('_scan_methods')) {
         $docblockParams = array_combine($m[2], $m[1]);
         $methodParams = array_combine(
             array_map(fn($p) => '$' . $p->getName(), $reflParams),
-            array_map(fn($p) => $p->hasType() ? $p->getType()->getName() : 'dynamic', $reflParams)
+            array_map(function($p) {
+                if ($p->isVariadic()) {
+                    // ... splat operator
+                    return 'variadic';
+                }
+                if ($p->hasType()) {
+                    return $p->getType()->getName();
+                }
+                return 'dynamic';
+            }, $reflParams)
+        );
+        $methodParamsHasDefault = array_combine(
+            array_map(fn($p) => '$' . $p->getName(), $reflParams),
+            array_map(fn($p) => $p->isDefaultValueAvailable(), $reflParams)
         );
 
         preg_match('#@return ([^ ]+)#', $reflDocblock, $m);
@@ -179,6 +197,7 @@ if (!function_exists('_scan_methods')) {
             'abstract' => $reflMethod->isAbstract(),
             'docblockParams' => $docblockParams,
             'methodParams' => $methodParams,
+            'methodParamsHasDefault' => $methodParamsHasDefault,
             'docblockReturn' => $docblockReturn,
             'methodReturn' => $methodReturn,
         ];
@@ -190,17 +209,14 @@ if (!function_exists('_scan_methods')) {
     global $_ett_lines;
     $_ett_lines = [];
 
-    /**
-     * Note: mixed static types are only availabe from php8.0
-     *
-     * @param mixed $arg
-     * @param string $type
-     * @return mixed
-     */
-    // function _a(string $castType, &$_arg)
-    function _a()
+     // TODO ensure $paramIsVariadic is populated when writing _a() calls
+    function _a($type, &$_arg, $paramHasDefault = false, $paramIsVariadic = false)
     {
-        return ;
+        // TODO: this function is doing too much, it's looping all params each call
+        // it should work on the single arg it's being called on, so that it does casting
+        // it ends up with probably the same ett.txt, but it's innefficient
+
+        // return ;
 
         global $_ett_method_cache, $_ett_lines;
 
@@ -222,38 +238,50 @@ if (!function_exists('_scan_methods')) {
         $calledMethod = $d[1]['function'] ?? '';
         $args = $d[1]['args'] ?? [];
 
+        if ($calledMethod == '__construct' && empty($args)) {
+            $a=1;
+        }
+
         if (!$calledClass || !$calledMethod) {
             return;
             echo 'No class or method';die;
         }
 
+        // shouldn't be doing reflection at this point, should only do
+        // relfection when writing _a() calls
         $key = $calledClass . '::' . $calledMethod;
         if (!array_key_exists($key, $_ett_method_cache)) {
-
-            try {
-                $reflClass = new ReflectionClass($calledClass);
-                $reflMethod = $reflClass->getMethod($calledMethod);
-                $_tt_method_cache[$key] = _ett_get_method_data($reflClass, $reflMethod);
-            } catch (Exception $e) {
-                echo "Exception when doing Refelction\n";
-                return;
-            }
+            $reflClass = new ReflectionClass($calledClass);
+            $reflMethod = $reflClass->getMethod($calledMethod);
+            $_tt_method_cache[$key] = _ett_get_method_data($reflClass, $reflMethod);
         }
-        $o = $_tt_method_cache[$key];
-        $vars = array_keys($o['methodParams']);
+        $data = $_tt_method_cache[$key];
+        $vars = array_keys($data['methodParams']);
+        // TODO: shouldn't be looping here, should be using function args
         for ($i = 0; $i < count($vars); $i++) {
             $var = $vars[$i];
-            $arg = $args[$i] ?? null;
-            $paramType = $o['methodParams'][$var];
+            if (!array_key_exists($i, $args)) {
+                // default args are a non issue
+                if ($data['methodParamsHasDefault'][$var]) {
+                    continue;
+                }
+                // variadic args are always mixed
+                if ($data['methodParams'][$var] == 'variadic') {
+                    continue;
+                }
+            }
+            $arg = $args[$i];
+            $paramType = $data['methodParams'][$var];
+            $paramWhere = 'method';
             if ($paramType != 'dynamic') {
-                // strongly typed method params are a non-issue
+                // strongly typed method params are a non-issue since they throw exceptions
                 continue;
             }
-            $paramWhere = 'method';
-            if (array_key_exists($var, $o['docblockParams'])) {
-                $paramType = $o['docblockParams'][$var];
+            if (array_key_exists($var, $data['docblockParams'])) {
+                $paramType = $data['docblockParams'][$var];
                 $paramWhere = 'docblock';
             } else {
+                $paramType = 'dynamic';
                 $paramWhere = 'nowhere';
             }
             if (is_null($arg)) {
