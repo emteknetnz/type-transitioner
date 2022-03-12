@@ -41,11 +41,25 @@ function _scan_methods()
             $methodData[] = _ett_get_method_data($reflClass, $reflMethod);
         }
         // only include methods with dynamic params or a dynamic return type
-        $methodData = array_filter($methodData, function (array $o) {
-            $hasDynamicParams = !empty(array_filter($o['methodParams'], fn(string $type) => $type == 'dynamic'));
-            return $hasDynamicParams || $o['methodReturn'] == 'dynamic';
+        $methodData = array_filter($methodData, function (array $data) {
+            $hasDynamicParams = !empty(array_filter($data['methodParams'], fn(string $type) => $type == 'dynamic'));
+            // TODO:
+            // return $hasDynamicParams || $o['methodReturn'] == 'dynamic';
+            return $hasDynamicParams;
         });
-        print_r($methodData);
+        // print_r($methodData);
+        /** @var array $m */
+        foreach ($methodData as $data) {
+            $method = $data['method'];
+            preg_match("#(?s)(function {$method}.+)#", $contents, $m);
+            $fncontents = $m[1];
+            preg_match('#( *){#', $fncontents, $m2);
+            $indent = $m2[1];
+            $newfncontents = preg_replace('#{#', "{\n$indent    _a('dynamic', 'test');", $fncontents, 1);
+            $contents = str_replace($fncontents, $newfncontents, $contents);
+        }
+
+        echo $contents;
         die;
     }
     die;
@@ -65,7 +79,7 @@ function _ett_get_method_data(ReflectionClass $reflClass, ReflectionMethod $refl
         array_map(fn($p) => '$' . $p->getName(), $reflParams),
         array_map(fn($p) => $p->hasType() ? $p->getType()->getName() : 'dynamic', $reflParams)
     );
-    
+
     preg_match('#@return ([^ ]+)#', $reflDocblock, $m);
     $docblockReturn = $m[1] ?? 'missing';
     $methodReturn = $reflReturn ? $reflReturn->getName() : 'dynamic';
@@ -89,7 +103,7 @@ $_ett_lines = [];
 
 /**
  * Note: mixed static types are only availabe from php8.0
- * 
+ *
  * @param mixed $arg
  * @param string $type
  * @return mixed
