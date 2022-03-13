@@ -137,6 +137,7 @@ if (!function_exists('_scan_methods')) {
                     if ($type != 'dynamic') {
                         continue;
                     }
+                    // TODO: change to $isSpecial - default value, variadic or is reference
                     $hasDefault = $data['methodParamsHasDefault'][$var] ? ', true' : '';
                     $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
                     $as[] = "_a('{$docblockType}', {$var}{$hasDefault});";
@@ -185,6 +186,10 @@ if (!function_exists('_scan_methods')) {
             array_map(fn($p) => '$' . $p->getName(), $reflParams),
             array_map(fn($p) => $p->isDefaultValueAvailable(), $reflParams)
         );
+        $methodParamsIsReference = array_combine(
+            array_map(fn($p) => '$' . $p->getName(), $reflParams),
+            array_map(fn($p) => $p->isPassedByReference(), $reflParams)
+        );
 
         preg_match('#@return ([^ ]+)#', $reflDocblock, $m);
         $docblockReturn = $m[1] ?? 'missing';
@@ -198,6 +203,7 @@ if (!function_exists('_scan_methods')) {
             'docblockParams' => $docblockParams,
             'methodParams' => $methodParams,
             'methodParamsHasDefault' => $methodParamsHasDefault,
+            'methodParamsIsReference' => $methodParamsIsReference,
             'docblockReturn' => $docblockReturn,
             'methodReturn' => $methodReturn,
         ];
@@ -229,16 +235,17 @@ if (!function_exists('_scan_methods')) {
             file_put_contents($outpath, '$callingFile, $callingLine, $calledClass, $calledMethod, $var, $paramWhere, $paramType, $argType'. "\n");
         }
 
-        $d = debug_backtrace(0, 2);
+        $d = debug_backtrace(0, 3);
 
-        $callingFile = $d[1]['file'] ?? '';
-        $callingLine = $d[1]['line'] ?? '';
+        // will use $d[2] in the case of call_user_func
+        $callingFile = $d[1]['file'] ?? ($d[2]['file'] ?? '');
+        $callingLine = $d[1]['line'] ?? ($d[2]['line'] ?? '');
         $calledClass = $d[1]['class'] ?? '';
         // $callType = $d[1]['type'] ?? '';
         $calledMethod = $d[1]['function'] ?? '';
         $args = $d[1]['args'] ?? [];
 
-        if ($calledMethod == '__construct' && empty($args)) {
+        if ($callingFile == '') {
             $a=1;
         }
 
@@ -263,6 +270,11 @@ if (!function_exists('_scan_methods')) {
             if (!array_key_exists($i, $args)) {
                 // default args are a non issue
                 if ($data['methodParamsHasDefault'][$var]) {
+                    continue;
+                }
+                // by reference arguments can start life as undefined and become a return var
+                // of sorts e.g. $m in preg_match($rx, $subject, $m);
+                if ($data['methodParamsIsReference'][$var]) {
                     continue;
                 }
                 // variadic args are always mixed
@@ -304,7 +316,11 @@ if (!function_exists('_scan_methods')) {
                 $argType = 'unknown';
             }
             // correctly documented, no need to log
-            if ($argType == $paramType) {
+            if ($paramType == $argType) {
+                continue;
+            }
+            // docblock says object, various DataObject are passed in, this is OK
+            if ($paramType == 'object' && is_object($arg)) {
                 continue;
             }
             $line = implode(',', [$callingFile, $callingLine, $calledClass, $calledMethod, $var, $paramWhere, $paramType, $argType]);
