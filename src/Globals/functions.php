@@ -5,8 +5,116 @@ use emteknetnz\TypeTransitioner\Exceptions\TypeException;
 use SilverStripe\Core\ClassInfo;
 use SilverStripe\Core\Manifest\ClassManifest;
 
+if (!defined('ETT_OPTIONAL')) {
+    define('ETT_OPTIONAL', 1);
+    define('ETT_REFERENCE', 2);
+    define('ETT_VARIADIC', 4);
+}
+
 // this will get included twice
 if (!function_exists('_scan_methods')) {
+
+    function _scan_methods()
+    {
+        // need to update framework constants.php, which loads as part of the index.php during
+        // require __DIR__ . '/../vendor/autoload.php';
+        // i.e. before autoloader has loaded emteknetnz functions.php
+        $path = __DIR__ . '/../../../../silverstripe/framework/src/includes/constants.php';
+        $contents = file_get_contents($path);
+        if (strpos($contents, 'emteknetnz') === false) {
+            $s = "require_once __DIR__ . '/functions.php';";
+            $r ="require_once __DIR__ . '/../../../../emteknetnz/type-transitioner/src/Globals/functions.php';";
+            file_put_contents($path, str_replace($s, "$r\n$s", $contents));
+        }
+        require_once __DIR__ . '/../../../../emteknetnz/type-transitioner/src/Globals/functions.php';
+        $out = shell_exec('find ' . BASE_PATH . '/vendor/silverstripe/framework | grep .php$');
+        $paths = explode("\n", $out);
+        foreach ($paths as $path) {
+            if (strpos($path, '/src/') === false && strpos($path, '/code/') === false) {
+                continue;
+            }
+            if (strpos($path, '/tests/') !== false) {
+                continue;
+            }
+            $contents = file_get_contents($path);
+            if (strpos($contents, ' _a(') !== false) {
+                continue;
+            }
+            $namespace = '';
+            if (preg_match('#\nnamespace (.+?);#', $contents, $m)) {
+                $namespace = $m[1];
+            }
+            $class = '';
+            if (preg_match('#(\nabstract |\n)class (.+?)[ \n]#', $contents, $m)) {
+                $class = $m[2];
+            } else {
+                // echo "Could not find class for path $path\n";
+                continue;
+            }
+            $fqcn = "$namespace\\$class";
+            // if (in_array($fqcn, [
+            //     'SilverStripe\Core\Environment',
+            //     'SilverStripe\Core\EnvironmentLoader',
+            //     'SilverStripe\Core\TempFolder',
+            //     'SilverStripe\Core\Path',
+            // ])) {
+            //     // skip as this will happen before functions.php is loaded, so _a() is not available
+            //     continue;
+            // }
+            $reflClass = new ReflectionClass($fqcn);
+            $methodData = [];
+            foreach ($reflClass->getMethods() as $reflMethod) {
+                $name = $reflMethod->getName();
+                // ReflectionClass::getMethods() sorts the methods by class (lowest in the inheritance tree first)
+                // so as soon as we find an inherited method not in the $contents, we can break
+                if (!preg_match("#function {$name} ?\(#", $contents)) {
+                    break;
+                }
+                $methodData[] = _ett_get_method_data($reflClass, $reflMethod);
+            }
+            // only include methods with dynamic params or a dynamic return type
+            $methodData = array_filter($methodData, function (array $data) {
+                if ($data['abstract']) {
+                    return false;
+                }
+                $hasDynamicParams = !empty(array_filter($data['methodParams'], fn(string $type) => $type == 'dynamic'));
+                // TODO:
+                // return $hasDynamicParams || $o['methodReturn'] == 'dynamic';
+                return $hasDynamicParams;
+            });
+            // print_r($methodData);
+            /** @var array $m */
+            $changed = false;
+            foreach ($methodData as $data) {
+                $as = [];
+                foreach ($data['methodParams'] as $var => $type) {
+                    if ($type != 'dynamic') {
+                        continue;
+                    }
+                    // TODO: change to $isSpecial - default value, variadic or is reference
+                    $flags = '';
+                    if ($data['methodParamFlags'][$var] > 0) {
+                        $flags = sprintf(', %s', $data['methodParamFlags'][$var]);
+                    }
+                    $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
+                    $as[] = "_a('{$docblockType}', {$var}{$flags});";
+                }
+                $method = $data['method'];
+                preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
+                $fncontents = $m[1];
+                preg_match('#( *){#', $fncontents, $m2);
+                $indent = $m2[1];
+                $aStr = implode("\n{$indent}    ", $as);
+                $newfncontents = preg_replace('#{#', "{\n$indent    $aStr", $fncontents, 1);
+                $contents = str_replace($fncontents, $newfncontents, $contents);
+                $changed = true;
+            }
+            if (!$changed) {
+                continue;
+            }
+            file_put_contents($path, $contents);
+        }
+    }
 
     function _analyse_data()
     {
@@ -60,105 +168,6 @@ if (!function_exists('_scan_methods')) {
         die;
     }
 
-    function _scan_methods()
-    {
-        $path = __DIR__ . '/../../../../silverstripe/framework/src/includes/constants.php';
-        $contents = file_get_contents($path);
-        if (strpos($contents, 'emteknetnz') === false) {
-            $s = "require_once __DIR__ . '/functions.php';";
-            $r ="require_once __DIR__ . '/../../../../emteknetnz/type-transitioner/src/Globals/functions.php';";
-            file_put_contents($path, str_replace($s, "$r\n$s", $contents));
-        }
-        require_once __DIR__ . '/../../../../emteknetnz/type-transitioner/src/Globals/functions.php';
-        $out = shell_exec('find ' . BASE_PATH . '/vendor/silverstripe/framework | grep .php$');
-        $paths = explode("\n", $out);
-        foreach ($paths as $path) {
-            if (strpos($path, '/src/') === false && strpos($path, '/code/') === false) {
-                continue;
-            }
-            if (strpos($path, '/tests/') !== false) {
-                continue;
-            }
-            $contents = file_get_contents($path);
-            if (strpos($contents, ' _a(') !== false) {
-                continue;
-            }
-            $namespace = '';
-            if (preg_match('#\nnamespace (.+?);#', $contents, $m)) {
-                $namespace = $m[1];
-            }
-            $class = '';
-            if (preg_match('#(\nabstract |\n)class (.+?)[ \n]#', $contents, $m)) {
-                $class = $m[2];
-            } else {
-                // echo "Could not find class for path $path\n";
-                continue;
-            }
-            $fqcn = "$namespace\\$class";
-            // if (in_array($fqcn, [
-            //     'SilverStripe\Core\Environment',
-            //     'SilverStripe\Core\EnvironmentLoader',
-            //     'SilverStripe\Core\TempFolder',
-            //     'SilverStripe\Core\Path',
-            // ])) {
-            //     // skip as this will happen before functions.php is loaded, so _a() is not available
-            //     continue;
-            // }
-            if ($class == 'HTTPRequest') {
-                $a=1;
-            }
-            $reflClass = new ReflectionClass($fqcn);
-            $methodData = [];
-            foreach ($reflClass->getMethods() as $reflMethod) {
-                $name = $reflMethod->getName();
-                // ReflectionClass::getMethods() sorts the methods by class (lowest in the inheritance tree first)
-                // so as soon as we find an inherited method not in the $contents, we can break
-                if (!preg_match("#function {$name} ?\(#", $contents)) {
-                    break;
-                }
-                $methodData[] = _ett_get_method_data($reflClass, $reflMethod);
-            }
-            // only include methods with dynamic params or a dynamic return type
-            $methodData = array_filter($methodData, function (array $data) {
-                if ($data['abstract']) {
-                    return false;
-                }
-                $hasDynamicParams = !empty(array_filter($data['methodParams'], fn(string $type) => $type == 'dynamic'));
-                // TODO:
-                // return $hasDynamicParams || $o['methodReturn'] == 'dynamic';
-                return $hasDynamicParams;
-            });
-            // print_r($methodData);
-            /** @var array $m */
-            $changed = false;
-            foreach ($methodData as $data) {
-                $as = [];
-                foreach ($data['methodParams'] as $var => $type) {
-                    if ($type != 'dynamic') {
-                        continue;
-                    }
-                    // TODO: change to $isSpecial - default value, variadic or is reference
-                    $hasDefault = $data['methodParamsHasDefault'][$var] ? ', true' : '';
-                    $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
-                    $as[] = "_a('{$docblockType}', {$var}{$hasDefault});";
-                }
-                $method = $data['method'];
-                $b = preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
-                $fncontents = $m[1];
-                preg_match('#( *){#', $fncontents, $m2);
-                $indent = $m2[1];
-                $aStr = implode("\n{$indent}    ", $as);
-                $newfncontents = preg_replace('#{#', "{\n$indent    $aStr", $fncontents, 1);
-                $contents = str_replace($fncontents, $newfncontents, $contents);
-                $changed = true;
-            }
-            if (!$changed) {
-                continue;
-            }
-            file_put_contents($path, $contents);
-        }
-    }
-
     // This should be a static method on a utility class or similar
     function _ett_get_method_data(ReflectionClass $reflClass, ReflectionMethod $reflMethod)
     {
@@ -182,14 +191,22 @@ if (!function_exists('_scan_methods')) {
                 return 'dynamic';
             }, $reflParams)
         );
-        $methodParamsHasDefault = array_combine(
+        $methodParamFlags = array_combine(
             array_map(fn($p) => '$' . $p->getName(), $reflParams),
-            array_map(fn($p) => $p->isDefaultValueAvailable(), $reflParams)
-        );
-        $methodParamsIsReference = array_combine(
-            array_map(fn($p) => '$' . $p->getName(), $reflParams),
-            array_map(fn($p) => $p->isPassedByReference(), $reflParams)
-        );
+            array_map(function(ReflectionParameter $p) {
+                $flags = 0;
+                if ($p->isOptional()) {
+                    $flags += ETT_OPTIONAL;
+                }
+                if ($p->isPassedByReference()) {
+                    $flags += ETT_REFERENCE;
+                }
+                if ($p->isVariadic()) {
+                    $flags += ETT_VARIADIC;
+                }
+                return $flags;
+            }, $reflParams
+        ));
 
         preg_match('#@return ([^ ]+)#', $reflDocblock, $m);
         $docblockReturn = $m[1] ?? 'missing';
@@ -202,8 +219,7 @@ if (!function_exists('_scan_methods')) {
             'abstract' => $reflMethod->isAbstract(),
             'docblockParams' => $docblockParams,
             'methodParams' => $methodParams,
-            'methodParamsHasDefault' => $methodParamsHasDefault,
-            'methodParamsIsReference' => $methodParamsIsReference,
+            'methodParamFlags' => $methodParamFlags,
             'docblockReturn' => $docblockReturn,
             'methodReturn' => $methodReturn,
         ];
@@ -222,7 +238,7 @@ if (!function_exists('_scan_methods')) {
         // it should work on the single arg it's being called on, so that it does casting
         // it ends up with probably the same ett.txt, but it's innefficient
 
-        // return ;
+        return ;
 
         global $_ett_method_cache, $_ett_lines;
 
@@ -268,17 +284,18 @@ if (!function_exists('_scan_methods')) {
         for ($i = 0; $i < count($vars); $i++) {
             $var = $vars[$i];
             if (!array_key_exists($i, $args)) {
-                // default args are a non issue
-                if ($data['methodParamsHasDefault'][$var]) {
+
+                // optional args are a non issue, will use default which is always valid
+                if (in_array(ETT_OPTIONAL, $data['methodParamFlags'])) {
                     continue;
                 }
                 // by reference arguments can start life as undefined and become a return var
                 // of sorts e.g. $m in preg_match($rx, $subject, $m);
-                if ($data['methodParamsIsReference'][$var]) {
+                if (in_array(ETT_REFERENCE, $data['methodParamFlags'])) {
                     continue;
                 }
                 // variadic args are always mixed
-                if ($data['methodParams'][$var] == 'variadic') {
+                if (in_array(ETT_VARIADIC, $data['methodParamFlags'])) {
                     continue;
                 }
             }
