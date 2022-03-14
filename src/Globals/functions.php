@@ -17,6 +17,12 @@ if (!function_exists('_write_function_calls')) {
     global $_writing_function_calls;
     $_writing_function_calls = false;
 
+    global $_ett_method_cache;
+    $_ett_method_cache = [];
+
+    global $_ett_lines;
+    $_ett_lines = [];
+
     function _write_function_calls()
     {
         global $_writing_function_calls;
@@ -243,7 +249,7 @@ if (!function_exists('_write_function_calls')) {
         ];
     }
 
-    function _ett_get_arg_type($arg, bool $classNameOnly = false): string
+    function _ett_get_arg_type($arg): string
     {
         if (is_null($arg)) {
             return 'null';
@@ -258,23 +264,18 @@ if (!function_exists('_write_function_calls')) {
         } elseif (is_bool($arg)) {
             return 'bool';
         } elseif (is_callable($arg)) {
-            return'callable';
+            return 'callable';
         } elseif (is_object($arg)) {
-            $fqcn = get_class($arg);
-            if ($classNameOnly) {
-                $a = explode('\\', $fqcn);
-                return $a[count($a) - 1];
-            }
-            return $fqcn;
+            return  get_class($arg);
         }
         return 'unknown';
     }
 
-    global $_ett_method_cache;
-    $_ett_method_cache = [];
-
-    global $_ett_lines;
-    $_ett_lines = [];
+    function _ett_get_classname_only(string $fqcn): string
+    {
+        $a = explode('\\', $fqcn);
+        return $a[count($a) - 1];
+    }
 
     // cast scalars if null - used for php81 compatibility - dev + live
     function _c(string $docBlockTypeStr, &$arg): void
@@ -283,20 +284,21 @@ if (!function_exists('_write_function_calls')) {
         if ($_writing_function_calls) {
             return;
         }
+        $nonObjectTypes = [
+            'string' => true,
+            'bool' => true,
+            'int' => true,
+            'float' => true,
+            'array' => true
+        ];
         $config = Config::inst();
         $docBlockTypes = explode('|', $docBlockTypeStr);
 
         // cast to the first casttype found e.g string|int will cast null to (string) '' 
         if ($config->get(Config::CAST_NULL) && is_null($arg) && !in_array('null', $docBlockTypes)) {
-            $castableTypes = [
-                'string' => true,
-                'bool' => true,
-                'int' => true,
-                'float' => true,
-                'array' => true
-            ];
             foreach ($docBlockTypes as $docBlockType) {
-                if (!array_key_exists($docBlockType, $castableTypes)) {
+                // can only cast to a non-object type
+                if (!array_key_exists($docBlockType, $nonObjectTypes)) {
                     continue;
                 }
                 // cast null $arg - set by reference
@@ -305,11 +307,16 @@ if (!function_exists('_write_function_calls')) {
             }
         }
 
-        if ($config->get(Config::TRIGGER_USER_DEPRECATED) || $config->get(Config::THROW_EXCEPTION)) {
+        if ($config->get(Config::TRIGGER_E_USER_DEPRECATED) || $config->get(Config::THROW_TYPE_EXCEPTION)) {
             $isValidType = false;
-            $argType = _ett_get_arg_type($arg, true);
+            $argType = _ett_get_arg_type($arg);
+            $isObject = is_object($argType);
             foreach ($docBlockTypes as $docBlockType) {
                 if ($argType == $docBlockType) {
+                    $isValidType = true;
+                    break;
+                }
+                if ($isObject && (_ett_get_classname_only($argType) == _ett_get_classname_only($docBlockType))) {
                     $isValidType = true;
                     break;
                 }
@@ -318,10 +325,10 @@ if (!function_exists('_write_function_calls')) {
                 // TODO - may need reflection/backtrace
                 // name of the argument that failed validation so can make a coherent message
                 $message = sprintf("My message");
-                if ($config->get(Config::TRIGGER_USER_DEPRECATED)) {
+                if ($config->get(Config::TRIGGER_E_USER_DEPRECATED)) {
                     @trigger_error($message, \E_USER_DEPRECATED);
                 }
-                if ($config->get(Config::THROW_EXCEPTION)) {
+                if ($config->get(Config::THROW_TYPE_EXCEPTION)) {
                     throw new TypeException($message);
                 }
             }
@@ -329,7 +336,7 @@ if (!function_exists('_write_function_calls')) {
     }
 
     // dev only - uses reflection and backtraces
-    // idea is to get info to update docblocks / strongly type params
+    // idea is to get info to update docblocks / strongly typed params
     function _a(): void
     {
         global $_writing_function_calls, $_ett_method_cache, $_ett_lines;

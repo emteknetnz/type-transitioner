@@ -7,13 +7,13 @@ namespace emteknetnz\TypeTransitioner\Config;
 final class Config
 {
     public const CAST_NULL = 'CAST_NULL';
-    public const TRIGGER_USER_DEPRECATED = 'TRIGGER_USER_DEPRECATED';
-    public const THROW_EXCEPTION = 'THROW_EXCEPTION';
+    public const TRIGGER_E_USER_DEPRECATED = 'TRIGGER_E_USER_DEPRECATED';
+    public const THROW_TYPE_EXCEPTION = 'THROW_TYPE_EXCEPTION';
 
     private $config = [
         self::CAST_NULL => false,
-        self::TRIGGER_USER_DEPRECATED => false,
-        self::THROW_EXCEPTION => false,
+        self::TRIGGER_E_USER_DEPRECATED => false,
+        self::THROW_TYPE_EXCEPTION => false,
     ];
 
     private static ?Config $inst = null;
@@ -25,14 +25,19 @@ final class Config
         }
         return self::$inst;
     }
-
-    public function get(string $key): bool
+    public static function get(string $key): bool
     {
-        return self::$config[$key];
+        return self::inst()->getConfig()[$key];
     }
 
-    public function set(string $key, bool $value): void
+    public static function set(string $key, bool $value): void
     {
-        self::$config[$key] = $value;
+        self::inst()->getConfig()[$key] = $value;
     }
+
+    public function getConfig(): array
+    {
+        return $this->config;
+    }
+
 }
