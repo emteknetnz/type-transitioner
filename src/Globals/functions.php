@@ -12,10 +12,15 @@ if (!defined('ETT_OPTIONAL')) {
 }
 
 // this will get included twice
-if (!function_exists('_scan_methods')) {
+if (!function_exists('_write_function_calls')) {
 
-    function _scan_methods()
+    global $_writing_function_calls;
+    $_writing_function_calls = false;
+
+    function _write_function_calls()
     {
+        global $_writing_function_calls;
+        $_writing_function_calls = true;
         // need to update framework constants.php, which loads as part of the index.php during
         // require __DIR__ . '/../vendor/autoload.php';
         // i.e. before autoloader has loaded emteknetnz functions.php
@@ -52,15 +57,6 @@ if (!function_exists('_scan_methods')) {
                 continue;
             }
             $fqcn = "$namespace\\$class";
-            // if (in_array($fqcn, [
-            //     'SilverStripe\Core\Environment',
-            //     'SilverStripe\Core\EnvironmentLoader',
-            //     'SilverStripe\Core\TempFolder',
-            //     'SilverStripe\Core\Path',
-            // ])) {
-            //     // skip as this will happen before functions.php is loaded, so _a() is not available
-            //     continue;
-            // }
             $reflClass = new ReflectionClass($fqcn);
             $methodData = [];
             foreach ($reflClass->getMethods() as $reflMethod) {
@@ -86,26 +82,28 @@ if (!function_exists('_scan_methods')) {
             /** @var array $m */
             $changed = false;
             foreach ($methodData as $data) {
-                $as = [];
+                $calls = [];
+                $writeA = false;
                 foreach ($data['methodParams'] as $var => $type) {
                     if ($type != 'dynamic') {
                         continue;
                     }
-                    // TODO: change to $isSpecial - default value, variadic or is reference
-                    $flags = '';
-                    if ($data['methodParamFlags'][$var] > 0) {
-                        $flags = sprintf(', %s', $data['methodParamFlags'][$var]);
+                    if ($data['methodParamFlags'][$var] == 0) {
+                        $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
+                        $calls[] = "_c('{$docblockType}', {$var});";
                     }
-                    $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
-                    $as[] = "_a('{$docblockType}', {$var}{$flags});";
+                    $writeA = true;
+                }
+                if ($writeA) {
+                    array_unshift($calls, '_a();');
                 }
                 $method = $data['method'];
                 preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
                 $fncontents = $m[1];
                 preg_match('#( *){#', $fncontents, $m2);
                 $indent = $m2[1];
-                $aStr = implode("\n{$indent}    ", $as);
-                $newfncontents = preg_replace('#{#', "{\n$indent    $aStr", $fncontents, 1);
+                $callsStr = implode("\n{$indent}    ", $calls);
+                $newfncontents = preg_replace('#{#', "{\n$indent    $callsStr", $fncontents, 1);
                 $contents = str_replace($fncontents, $newfncontents, $contents);
                 $changed = true;
             }
@@ -118,6 +116,10 @@ if (!function_exists('_scan_methods')) {
 
     function _analyse_data()
     {
+        global $_writing_function_calls;
+        if ($_writing_function_calls) {
+            return;
+        }
         $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
         // remove header
         array_shift($lines);
@@ -231,16 +233,62 @@ if (!function_exists('_scan_methods')) {
     global $_ett_lines;
     $_ett_lines = [];
 
-     // TODO ensure $paramIsVariadic is populated when writing _a() calls
-    function _a($type, &$_arg, $paramHasDefault = false, $paramIsVariadic = false)
+    // cast scalars if null - used for php81 compatibility - dev + live
+    function _c(string $castType, &$arg): void
     {
-        // TODO: this function is doing too much, it's looping all params each call
-        // it should work on the single arg it's being called on, so that it does casting
-        // it ends up with probably the same ett.txt, but it's innefficient
+        global $_writing_function_calls;
+        if ($_writing_function_calls) {
+            return;
+        }
+        // instead of casting dynamic to blank string (probably easy fallback)
+        // better off using _a() to properly work out what docblocks / strong types shoudl be
+        // and then updating them to a strong type
+        if ($castType === 'dynamic') {
+            return;
+        }
+        // only interested in casting null values to default scalar value
+        if (!is_null($arg)) {
+            return;
+        }
+        $scalarTypes = [
+            'string' => true,
+            'bool' => true,
+            'int' => true,
+            'float' => true
+        ];
+        foreach (explode('|', $castType) as $type) {
+            // can only cast scalars, this is ok because it's all we need to do for php81
+            if (!array_key_exists($castType, $scalarTypes)) {
+                continue;
+            }
+            // set by reference
+            $arg = settype($arg, $type);
+            return;
+        }
+        // // TODO: get call stack so can provide useful exception data
+        // $config = Config::inst();
+        // if ($config->get(Config::LOG)) { -- don't log, _a() is used for this
+        // }
+        // if ($config->get(Config::THROW_EXCEPTION)) {
+        //     if ($type === 'string' && !is_string($arg)) {
+        //         throw new TypeException(sprintf('%s is not a string', $arg));
+        //     }
+        // }
+        // if ($config->get(Config::CAST)) { -- default setting, cast if null
+        //     if ($type === 'string') {
+        //         return (string) $arg;
+        //     }
+        // }
+    }
 
-        return ;
-
-        global $_ett_method_cache, $_ett_lines;
+    // dev only - uses reflection and backtraces
+    // idea is to get info to update docblocks / strongly type params
+    function _a(): void
+    {
+        global $_writing_function_calls, $_ett_method_cache, $_ett_lines;
+        if ($_writing_function_calls) {
+            return;
+        }
 
         $outdir = str_replace('//', '/', BASE_PATH . '/artifacts');
         if (!file_exists($outdir)) {
@@ -261,17 +309,11 @@ if (!function_exists('_scan_methods')) {
         $calledMethod = $d[1]['function'] ?? '';
         $args = $d[1]['args'] ?? [];
 
-        if ($callingFile == '') {
-            $a=1;
-        }
-
         if (!$calledClass || !$calledMethod) {
             return;
             echo 'No class or method';die;
         }
 
-        // shouldn't be doing reflection at this point, should only do
-        // relfection when writing _a() calls
         $key = $calledClass . '::' . $calledMethod;
         if (!array_key_exists($key, $_ett_method_cache)) {
             $reflClass = new ReflectionClass($calledClass);
@@ -280,22 +322,21 @@ if (!function_exists('_scan_methods')) {
         }
         $data = $_tt_method_cache[$key];
         $vars = array_keys($data['methodParams']);
-        // TODO: shouldn't be looping here, should be using function args
         for ($i = 0; $i < count($vars); $i++) {
             $var = $vars[$i];
             if (!array_key_exists($i, $args)) {
 
-                // optional args are a non issue, will use default which is always valid
-                if (in_array(ETT_OPTIONAL, $data['methodParamFlags'])) {
+                // optional args are a non issue, will use default which assumed to always be valid
+                if (($data['methodParamFlags'] & ETT_OPTIONAL) == ETT_OPTIONAL) {
                     continue;
                 }
                 // by reference arguments can start life as undefined and become a return var
                 // of sorts e.g. $m in preg_match($rx, $subject, $m);
-                if (in_array(ETT_REFERENCE, $data['methodParamFlags'])) {
+                if (($data['methodParamFlags'] & ETT_REFERENCE) == ETT_REFERENCE) {
                     continue;
                 }
-                // variadic args are always mixed
-                if (in_array(ETT_VARIADIC, $data['methodParamFlags'])) {
+                // variadic args are always a mixed array, no need to validate
+                if (($data['methodParamFlags'] & ETT_VARIADIC) == ETT_VARIADIC) {
                     continue;
                 }
             }
@@ -304,7 +345,7 @@ if (!function_exists('_scan_methods')) {
             $paramWhere = 'method';
             if ($paramType != 'dynamic') {
                 // strongly typed method params are a non-issue since they throw exceptions
-                continue;
+                return;
             }
             if (array_key_exists($var, $data['docblockParams'])) {
                 $paramType = $data['docblockParams'][$var];
@@ -334,36 +375,18 @@ if (!function_exists('_scan_methods')) {
             }
             // correctly documented, no need to log
             if ($paramType == $argType) {
-                continue;
+                return;
             }
             // docblock says object, various DataObject are passed in, this is OK
             if ($paramType == 'object' && is_object($arg)) {
-                continue;
+                return;
             }
             $line = implode(',', [$callingFile, $callingLine, $calledClass, $calledMethod, $var, $paramWhere, $paramType, $argType]);
             if (array_key_exists($line, $_ett_lines)) {
-                continue;
+                return;
             }
             $_ett_lines[$line] = true;
             file_put_contents($outpath, "$line\n", FILE_APPEND);
         }
-
-        // return;
-
-        // // TODO: get call stack so can provide useful exception data
-        // $config = Config::inst();
-        // if ($config->get(Config::LOG)) {
-
-        // }
-        // if ($config->get(Config::THROW_EXCEPTION)) {
-        //     if ($type === 'string' && !is_string($arg)) {
-        //         throw new TypeException(sprintf('%s is not a string', $arg));
-        //     }
-        // }
-        // if ($config->get(Config::CAST)) {
-        //     if ($type === 'string') {
-        //         return (string) $arg;
-        //     }
-        // }
     }
 }
