@@ -316,9 +316,18 @@ if (!function_exists('_write_function_calls')) {
                     $isValidType = true;
                     break;
                 }
-                if ($isObject && (_ett_get_classname_only($argType) == _ett_get_classname_only($docBlockType))) {
-                    $isValidType = true;
-                    break;
+                if ($isObject) {
+                    $docBlockTypeClassNameOnly = _ett_get_classname_only($docBlockType);
+                    if (_ett_get_classname_only($argType) == $docBlockTypeClassNameOnly) {
+                        $isValidType = true;
+                        break;
+                    }
+                    foreach (ClassInfo::ancestry($arg) as $ancestorClass) {
+                        if (_ett_get_classname_only($ancestorClass) == $docBlockTypeClassNameOnly) {
+                            $isValidType = true;
+                            break;
+                        }
+                    }
                 }
             }
             if (!$isValidType) {
