@@ -74,11 +74,10 @@ if (!function_exists('_write_function_calls')) {
                     return false;
                 }
                 $hasDynamicParams = !empty(array_filter($data['methodParams'], fn(string $type) => $type == 'dynamic'));
-                // TODO:
+                // TODO: return types
                 // return $hasDynamicParams || $o['methodReturn'] == 'dynamic';
                 return $hasDynamicParams;
             });
-            // print_r($methodData);
             /** @var array $m */
             $changed = false;
             foreach ($methodData as $data) {
@@ -90,6 +89,23 @@ if (!function_exists('_write_function_calls')) {
                     }
                     if ($data['methodParamFlags'][$var] == 0) {
                         $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
+                        $docblockType = implode('|', array_map(function(string $type) {
+                            $type = ltrim($type, '\\');
+                            if ($type == 'true' || $type == 'false') {
+                                $type = 'bool';
+                            }
+                            // e.g. string[]
+                            if (strpos($type, '[]')) {
+                                $type = 'array';
+                            }
+                            if ($type == 'boolean') {
+                                $type = 'bool';
+                            }
+                            return $type;
+                        }, explode('|', $docblockType)));
+                        
+                        $docblockType = str_replace('|\\', '|', $docblockType);
+                        $docblockType = ltrim($docblockType, '\\');
                         $calls[] = "_c('{$docblockType}', {$var});";
                     }
                     $writeA = true;
@@ -227,6 +243,33 @@ if (!function_exists('_write_function_calls')) {
         ];
     }
 
+    function _ett_get_arg_type($arg, bool $classNameOnly = false): string
+    {
+        if (is_null($arg)) {
+            return 'null';
+        } elseif (is_string($arg)) {
+            return 'string';
+        } elseif (is_int($arg)) {
+            return 'int';
+        } elseif (is_float($arg)) {
+            return 'float';
+        } elseif (is_array($arg)) {
+            return 'array';
+        } elseif (is_bool($arg)) {
+            return 'bool';
+        } elseif (is_callable($arg)) {
+            return'callable';
+        } elseif (is_object($arg)) {
+            $fqcn = get_class($arg);
+            if ($classNameOnly) {
+                $a = explode('\\', $fqcn);
+                return $a[count($a) - 1];
+            }
+            return $fqcn;
+        }
+        return 'unknown';
+    }
+
     global $_ett_method_cache;
     $_ett_method_cache = [];
 
@@ -234,51 +277,55 @@ if (!function_exists('_write_function_calls')) {
     $_ett_lines = [];
 
     // cast scalars if null - used for php81 compatibility - dev + live
-    function _c(string $castType, &$arg): void
+    function _c(string $docBlockTypeStr, &$arg): void
     {
         global $_writing_function_calls;
         if ($_writing_function_calls) {
             return;
         }
-        // instead of casting dynamic to blank string (probably easy fallback)
-        // better off using _a() to properly work out what docblocks / strong types shoudl be
-        // and then updating them to a strong type
-        if ($castType === 'dynamic') {
-            return;
-        }
-        // only interested in casting null values to default scalar value
-        if (!is_null($arg)) {
-            return;
-        }
-        $scalarTypes = [
-            'string' => true,
-            'bool' => true,
-            'int' => true,
-            'float' => true
-        ];
-        foreach (explode('|', $castType) as $type) {
-            // can only cast scalars, this is ok because it's all we need to do for php81
-            if (!array_key_exists($castType, $scalarTypes)) {
-                continue;
+        $config = Config::inst();
+        $docBlockTypes = explode('|', $docBlockTypeStr);
+
+        // cast to the first casttype found e.g string|int will cast null to (string) '' 
+        if ($config->get(Config::CAST_NULL) && is_null($arg) && !in_array('null', $docBlockTypes)) {
+            $castableTypes = [
+                'string' => true,
+                'bool' => true,
+                'int' => true,
+                'float' => true,
+                'array' => true
+            ];
+            foreach ($docBlockTypes as $docBlockType) {
+                if (!array_key_exists($docBlockType, $castableTypes)) {
+                    continue;
+                }
+                // cast null $arg - set by reference
+                $arg = settype($arg, $docBlockType);
+                break;
             }
-            // set by reference
-            $arg = settype($arg, $type);
-            return;
         }
-        // // TODO: get call stack so can provide useful exception data
-        // $config = Config::inst();
-        // if ($config->get(Config::LOG)) { -- don't log, _a() is used for this
-        // }
-        // if ($config->get(Config::THROW_EXCEPTION)) {
-        //     if ($type === 'string' && !is_string($arg)) {
-        //         throw new TypeException(sprintf('%s is not a string', $arg));
-        //     }
-        // }
-        // if ($config->get(Config::CAST)) { -- default setting, cast if null
-        //     if ($type === 'string') {
-        //         return (string) $arg;
-        //     }
-        // }
+
+        if ($config->get(Config::TRIGGER_USER_DEPRECATED) || $config->get(Config::THROW_EXCEPTION)) {
+            $isValidType = false;
+            $argType = _ett_get_arg_type($arg, true);
+            foreach ($docBlockTypes as $docBlockType) {
+                if ($argType == $docBlockType) {
+                    $isValidType = true;
+                    break;
+                }
+            }
+            if (!$isValidType) {
+                // TODO - may need reflection/backtrace
+                // name of the argument that failed validation so can make a coherent message
+                $message = sprintf("My message");
+                if ($config->get(Config::TRIGGER_USER_DEPRECATED)) {
+                    @trigger_error($message, \E_USER_DEPRECATED);
+                }
+                if ($config->get(Config::THROW_EXCEPTION)) {
+                    throw new TypeException($message);
+                }
+            }
+        }
     }
 
     // dev only - uses reflection and backtraces
@@ -354,25 +401,7 @@ if (!function_exists('_write_function_calls')) {
                 $paramType = 'dynamic';
                 $paramWhere = 'nowhere';
             }
-            if (is_null($arg)) {
-                $argType = 'null';
-            } elseif (is_string($arg)) {
-                $argType = 'string';
-            } elseif (is_int($arg)) {
-                $argType = 'int';
-            } elseif (is_float($arg)) {
-                $argType = 'float';
-            } elseif (is_array($arg)) {
-                $argType = 'array';
-            } elseif (is_bool($arg)) {
-                $argType = 'bool';
-            } elseif (is_callable($arg)) {
-                $argType = 'callable';
-            } elseif (is_object($arg)) {
-                $argType = get_class($arg);
-            } else {
-                $argType = 'unknown';
-            }
+            $argType = _ett_get_arg_type($arg);
             // correctly documented, no need to log
             if ($paramType == $argType) {
                 return;

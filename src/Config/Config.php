@@ -6,14 +6,14 @@ namespace emteknetnz\TypeTransitioner\Config;
 
 final class Config
 {
-    public const LOG = 'LOG';
+    public const CAST_NULL = 'CAST_NULL';
+    public const TRIGGER_USER_DEPRECATED = 'TRIGGER_USER_DEPRECATED';
     public const THROW_EXCEPTION = 'THROW_EXCEPTION';
-    public const CAST = 'CAST';
 
     private $config = [
-        self::LOG => false,
+        self::CAST_NULL => false,
+        self::TRIGGER_USER_DEPRECATED => false,
         self::THROW_EXCEPTION => false,
-        self::CAST => false,
     ];
 
     private static ?Config $inst = null;
