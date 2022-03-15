@@ -63,7 +63,7 @@ if (!function_exists('_write_function_calls')) {
             }
             $fqcn = "$namespace\\$class";
             $reflClass = new ReflectionClass($fqcn);
-            $methodData = [];
+            $methodDataArr = [];
             foreach ($reflClass->getMethods() as $reflMethod) {
                 $name = $reflMethod->getName();
                 // ReflectionClass::getMethods() sorts the methods by class (lowest in the inheritance tree first)
@@ -71,10 +71,10 @@ if (!function_exists('_write_function_calls')) {
                 if (!preg_match("#function {$name} ?\(#", $contents)) {
                     break;
                 }
-                $methodData[] = _ett_get_method_data($reflClass, $reflMethod);
+                $methodDataArr[] = _ett_get_method_data($reflClass, $reflMethod);
             }
             // only include methods with dynamic params or a dynamic return type
-            $methodData = array_filter($methodData, function (array $data) {
+            $methodDataArr = array_filter($methodDataArr, function (array $data) {
                 if ($data['abstract']) {
                     return false;
                 }
@@ -85,24 +85,28 @@ if (!function_exists('_write_function_calls')) {
             });
             /** @var array $m */
             $changed = false;
-            foreach ($methodData as $data) {
+            foreach ($methodDataArr as $methodData) {
                 $calls = [];
                 $writeA = false;
                 $paramNum = -1;
-                $method = $data['method'];
-                foreach ($data['methodParamTypes'] as $paramName => $methodParamType) {
+                $method = $methodData['method'];
+                foreach ($methodData['methodParamTypes'] as $paramName => $methodParamType) {
                     $paramNum++;
                     if ($methodParamType != 'dynamic') {
                         continue;
                     }
-                    if ($data['methodParamFlags'][$paramName] > 0) {
+                    // if (($methodData['methodParamFlags'][$paramName] & ETT_REFERENCE) == ETT_REFERENCE) {
+                    //     continue;
+                    // }
+                    // variadic params are always an array, so no need to log
+                    if (($methodData['methodParamFlags'][$paramName] & ETT_VARIADIC) == ETT_VARIADIC) {
                         continue;
                     }
                     // these methods are used by _c() so exclude as to not cause infinite loop
                     if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
                         continue;
                     }
-                    $docblockTypeStr = $data['docblockParams'][$paramName] ?? 'dynamic';
+                    $docblockTypeStr = $methodData['docblockParams'][$paramName] ?? 'dynamic';
                     if (strpos($docblockTypeStr, 'mixed') !== false) {
                         continue;
                     }
@@ -121,10 +125,8 @@ if (!function_exists('_write_function_calls')) {
                 }
                 preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
                 $fncontents = $m[1];
-                preg_match('#( *){#', $fncontents, $m2);
-                $indent = $m2[1];
-                $callsStr = implode("\n{$indent}    ", $calls);
-                $newfncontents = preg_replace('#{#', "{\n$indent    $callsStr", $fncontents, 1);
+                $callsStr = implode("\n        ", $calls);
+                $newfncontents = preg_replace('#{#', "{\n        $callsStr", $fncontents, 1);
                 $contents = str_replace($fncontents, $newfncontents, $contents);
                 $changed = true;
             }
@@ -456,11 +458,11 @@ if (!function_exists('_write_function_calls')) {
         for ($i = 0; $i < count($paramNames); $i++) {
             $paramName = $paramNames[$i];
             $arg = $backRefl['args'][$i] ?? null;
-            // optional args are a non issue, will use default which assumed to always be valid
+            // null optional args are a non issue, will use default which assumed to always be valid
             if (is_null($arg) && ($methodData['methodParamFlags'][$paramName] & ETT_OPTIONAL) == ETT_OPTIONAL) {
                 continue;
             }
-            // by reference arguments can start life as undefined and become a return var
+            // null by reference arguments can start life as undefined and become a return var
             // of sorts e.g. $m in preg_match($rx, $subject, $m);
             if (is_null($arg) && ($methodData['methodParamFlags'][$paramName] & ETT_REFERENCE) == ETT_REFERENCE) {
                 continue;
