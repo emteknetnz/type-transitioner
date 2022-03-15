@@ -3,7 +3,6 @@
 use emteknetnz\TypeTransitioner\Config\Config;
 use emteknetnz\TypeTransitioner\Exceptions\TypeException;
 use SilverStripe\Core\ClassInfo;
-use SilverStripe\Core\Manifest\ClassManifest;
 
 if (!defined('ETT_OPTIONAL')) {
     define('ETT_OPTIONAL', 1);
@@ -79,7 +78,7 @@ if (!function_exists('_write_function_calls')) {
                 if ($data['abstract']) {
                     return false;
                 }
-                $hasDynamicParams = !empty(array_filter($data['methodParams'], fn(string $type) => $type == 'dynamic'));
+                $hasDynamicParams = !empty(array_filter($data['methodParamTypes'], fn(string $type) => $type == 'dynamic'));
                 // TODO: return types
                 // return $hasDynamicParams || $o['methodReturn'] == 'dynamic';
                 return $hasDynamicParams;
@@ -91,7 +90,7 @@ if (!function_exists('_write_function_calls')) {
                 $writeA = false;
                 $paramNum = -1;
                 $method = $data['method'];
-                foreach ($data['methodParams'] as $paramName => $methodParamType) {
+                foreach ($data['methodParamTypes'] as $paramName => $methodParamType) {
                     $paramNum++;
                     if ($methodParamType != 'dynamic') {
                         continue;
@@ -99,45 +98,26 @@ if (!function_exists('_write_function_calls')) {
                     if ($data['methodParamFlags'][$paramName] > 0) {
                         continue;
                     }
-                    // $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
-                    if (!isset($data['docblockParams'][$paramName])) {
-                        continue;
-                    }
                     // these methods are used by _c() so exclude as to not cause infinite loop
                     if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
                         continue;
                     }
-                    // clean up docblock types
-                    $docblockType = implode('|', array_map(function(string $type) {
-                        $type = ltrim($type, '\\');
-                        if ($type == 'true' || $type == 'false') {
-                            $type = 'bool';
-                        }
-                        // e.g. string[]
-                        if (strpos($type, '[]')) {
-                            $type = 'array';
-                        }
-                        if (strtolower($type) == 'boolean') {
-                            $type = 'bool';
-                        }
-                        if ($type == 'Object') {
-                            $type = 'object';
-                        }
-                        if (strtolower($type) == 'integer') {
-                            $type = 'int';
-                        }
-                        return $type;
-                    }, explode('|', $data['docblockParams'][$paramName])));
-                    if (strpos($docblockType, 'mixed') !== false) {
+                    $docblockTypeStr = $data['docblockParams'][$paramName] ?? 'dynamic';
+                    if (strpos($docblockTypeStr, 'mixed') !== false) {
                         continue;
                     }
-                    $docblockType = str_replace('|\\', '|', $docblockType);
-                    $docblockType = ltrim($docblockType, '\\');
-                    $calls[] = "_c('{$docblockType}', {$paramName}, {$paramNum});";
+                    if ($docblockTypeStr != 'dynamic') {
+                        $docblockTypeStr = _ett_clean_docblock_type_str($docblockTypeStr);
+                        
+                        $calls[] = "_c('{$docblockTypeStr}', {$paramName}, {$paramNum});";
+                    }
                     $writeA = true;
                 }
                 if ($writeA) {
                     array_unshift($calls, '_a();');
+                }
+                if (empty($calls)) {
+                    continue;
                 }
                 preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
                 $fncontents = $m[1];
@@ -153,6 +133,32 @@ if (!function_exists('_write_function_calls')) {
             }
             file_put_contents($path, $contents);
         }
+    }
+
+    function _ett_clean_docblock_type_str(string $docblockTypeStr): string
+    {
+        $str = implode('|', array_map(function(string $type) {
+            $type = ltrim($type, '\\');
+            if ($type == 'true' || $type == 'false') {
+                $type = 'bool';
+            }
+            // e.g. string[]
+            if (strpos($type, '[]') !== false) {
+                $type = 'array';
+            }
+            if ($type == 'Object') {
+                $type = 'object';
+            }
+            if (strtolower($type) == 'boolean') {
+                $type = 'bool';
+            }
+            if (strtolower($type) == 'integer') {
+                $type = 'int';
+            }
+            return $type;
+        }, explode('|', $docblockTypeStr)));
+        $str = str_replace('|\\', '|', $str);
+        return ltrim($str, '\\');
     }
 
     function _analyse_data()
@@ -261,7 +267,7 @@ if (!function_exists('_write_function_calls')) {
             'method' => $reflMethod->getName(),
             'abstract' => $reflMethod->isAbstract(),
             'docblockParams' => $docblockParams,
-            'methodParams' => $methodParams,
+            'methodParamTypes' => $methodParams,
             'methodParamFlags' => $methodParamFlags,
             'docblockReturn' => $docblockReturn,
             'methodReturn' => $methodReturn,
@@ -306,6 +312,61 @@ if (!function_exists('_write_function_calls')) {
         return "$a '$str'";
     }
 
+    function _ett_backtrace_reflection(): array
+    {
+        global $_ett_method_cache;
+        $d = debug_backtrace(0, 4);
+        // will use $d[3] in the case of call_user_func
+        $callingFile = $d[2]['file'] ?? ($d[3]['file'] ?? '');
+        $callingLine = $d[2]['line'] ?? ($d[3]['line'] ?? '');
+        $calledClass = $d[2]['class'] ?? '';
+        // $callType = $d[2]['type'] ?? '';
+        $calledMethod = $d[2]['function'] ?? '';
+        $args = $d[2]['args'] ?? [];
+        $key = $calledClass . '::' . $calledMethod;
+        if (!array_key_exists($key, $_ett_method_cache)) {
+            $reflClass = new ReflectionClass($calledClass);
+            $reflMethod = $reflClass->getMethod($calledMethod);
+            $_tt_method_cache[$key] = _ett_get_method_data($reflClass, $reflMethod);
+        }
+        $methodData = $_tt_method_cache[$key];
+        return [
+            'callingFile' => $callingFile,
+            'callingLine' => $callingLine,
+            'calledClass' => $calledClass,
+            'calledMethod' => $calledMethod,
+            'args' => $args,
+            'methodData' => $methodData
+        ];
+    }
+
+    function _ett_arg_matches_docblock_type_str($arg, string $docblockTypeStr)
+    {
+        $docBlockTypes = explode('|', _ett_clean_docblock_type_str($docblockTypeStr));
+        $argType = _ett_get_arg_type($arg);
+        $isObject = is_object($arg);
+        foreach ($docBlockTypes as $docBlockType) {
+            if ($argType == $docBlockType) {
+                return true;
+            }
+            if ($isObject) {
+                if ($docBlockType == 'object') {
+                    return true;
+                }
+                $docBlockTypeClassNameOnly = _ett_get_classname_only($docBlockType);
+                if (_ett_get_classname_only($argType) == $docBlockTypeClassNameOnly) {
+                    return true;
+                }
+                foreach (ClassInfo::ancestry($arg) as $ancestorClass) {
+                    if (_ett_get_classname_only($ancestorClass) == $docBlockTypeClassNameOnly) {
+                        return true;;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     function _c(string $docBlockTypeStr, &$arg, int $paramNum): void
     {
         global $_writing_function_calls;
@@ -336,35 +397,10 @@ if (!function_exists('_write_function_calls')) {
         }
 
         if ($config->get(Config::TRIGGER_E_USER_DEPRECATED) || $config->get(Config::THROW_TYPE_EXCEPTION)) {
-            $isValidType = false;
-            $argType = _ett_get_arg_type($arg);
-            $isObject = is_object($arg);
-            foreach ($docBlockTypes as $docBlockType) {
-                if ($argType == $docBlockType) {
-                    $isValidType = true;
-                    break;
-                }
-                if ($isObject) {
-                    if ($docBlockType == 'object') {
-                        $isValidType = true;
-                        break;
-                    }
-                    $docBlockTypeClassNameOnly = _ett_get_classname_only($docBlockType);
-                    if (_ett_get_classname_only($argType) == $docBlockTypeClassNameOnly) {
-                        $isValidType = true;
-                        break;
-                    }
-                    foreach (ClassInfo::ancestry($arg) as $ancestorClass) {
-                        if (_ett_get_classname_only($ancestorClass) == $docBlockTypeClassNameOnly) {
-                            $isValidType = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!$isValidType) {
+            if (!_ett_arg_matches_docblock_type_str($arg, $docBlockTypeStr)) {
+                $argType = _ett_get_arg_type($arg);
                 $backRefl = _ett_backtrace_reflection();
-                $paramName = array_keys($backRefl['methodData']['methodParams'])[$paramNum];
+                $paramName = array_keys($backRefl['methodData']['methodParamTypes'])[$paramNum];
                 if ($config->get(Config::TRIGGER_E_USER_DEPRECATED)) {
                     trigger_error(sprintf(
                         implode("\n", [
@@ -395,39 +431,11 @@ if (!function_exists('_write_function_calls')) {
         }
     }
 
-    function _ett_backtrace_reflection(): array
-    {
-        global $_ett_method_cache;
-        $d = debug_backtrace(0, 4);
-        // will use $d[3] in the case of call_user_func
-        $callingFile = $d[2]['file'] ?? ($d[3]['file'] ?? '');
-        $callingLine = $d[2]['line'] ?? ($d[3]['line'] ?? '');
-        $calledClass = $d[2]['class'] ?? '';
-        // $callType = $d[2]['type'] ?? '';
-        $calledMethod = $d[2]['function'] ?? '';
-        $args = $d[2]['args'] ?? [];
-        $key = $calledClass . '::' . $calledMethod;
-        if (!array_key_exists($key, $_ett_method_cache)) {
-            $reflClass = new ReflectionClass($calledClass);
-            $reflMethod = $reflClass->getMethod($calledMethod);
-            $_tt_method_cache[$key] = _ett_get_method_data($reflClass, $reflMethod);
-        }
-        $methodData = $_tt_method_cache[$key];
-        return [
-            'callingFile' => $callingFile,
-            'callingLine' => $callingLine,
-            'calledClass' => $calledClass,
-            'calledMethod' => $calledMethod,
-            'args' => $args,
-            'methodData' => $methodData
-        ];
-    }
-
     // dev only - uses reflection and backtraces
     // idea is to get info to update docblocks / strongly typed params
     function _a(): void
     {
-        global $_writing_function_calls, $_ett_method_cache, $_ett_lines;
+        global $_writing_function_calls, $_ett_lines;
         if ($_writing_function_calls) {
             return;
         }
@@ -444,58 +452,51 @@ if (!function_exists('_write_function_calls')) {
         $backRefl = _ett_backtrace_reflection();
         $methodData = $backRefl['methodData'];
 
-        $paramNames = array_keys($methodData['methodParams']);
+        $paramNames = array_keys($methodData['methodParamTypes']);
         for ($i = 0; $i < count($paramNames); $i++) {
             $paramName = $paramNames[$i];
-            if (!array_key_exists($i, $methodData)) {
-
-                // optional args are a non issue, will use default which assumed to always be valid
-                if (($methodData['methodParamFlags'] & ETT_OPTIONAL) == ETT_OPTIONAL) {
-                    continue;
-                }
-                // by reference arguments can start life as undefined and become a return var
-                // of sorts e.g. $m in preg_match($rx, $subject, $m);
-                if (($methodData['methodParamFlags'] & ETT_REFERENCE) == ETT_REFERENCE) {
-                    continue;
-                }
-                // variadic args are always a mixed array, no need to validate
-                if (($methodData['methodParamFlags'] & ETT_VARIADIC) == ETT_VARIADIC) {
-                    continue;
-                }
+            $arg = $backRefl['args'][$i] ?? null;
+            // optional args are a non issue, will use default which assumed to always be valid
+            if (is_null($arg) && ($methodData['methodParamFlags'][$paramName] & ETT_OPTIONAL) == ETT_OPTIONAL) {
+                continue;
             }
-            $arg = $methodData['args'][$i];
-            $paramType = $methodData['methodParams'][$paramName];
-            $paramWhere = 'method';
-            if ($paramType != 'dynamic') {
-                // strongly typed method params are a non-issue since they throw exceptions
+            // by reference arguments can start life as undefined and become a return var
+            // of sorts e.g. $m in preg_match($rx, $subject, $m);
+            if (is_null($arg) && ($methodData['methodParamFlags'][$paramName] & ETT_REFERENCE) == ETT_REFERENCE) {
+                continue;
+            }
+            // variadic args are always a mixed array, no need to validate
+            if (($methodData['methodParamFlags'][$paramName] & ETT_VARIADIC) == ETT_VARIADIC) {
+                continue;
+            }
+            // strongly typed method params are a non-issue since they throw exceptions
+            if ($methodData['methodParamTypes'][$paramName] != 'dynamic') {
                 return;
             }
-            if (array_key_exists($paramName, $methodData['docblockParams'])) {
-                $paramType = $methodData['docblockParams'][$paramName];
+            $docBlockTypeStr = $methodData['docblockParams'][$paramName] ?? '';
+            if ($docBlockTypeStr != '') {
+                $paramType = $docBlockTypeStr;
                 $paramWhere = 'docblock';
             } else {
                 $paramType = 'dynamic';
-                $paramWhere = 'nowhere';
+                $paramWhere = 'undocumented';
             }
             $argType = _ett_get_arg_type($arg);
-            // correctly documented, no need to log
-            if ($paramType == $argType) {
-                return;
-            }
-            // docblock says object, various DataObject are passed in, this is OK
-            if ($paramType == 'object' && is_object($arg)) {
+            // arg matches dockblock type, no need to log
+            if (_ett_arg_matches_docblock_type_str($arg, $docBlockTypeStr)) {
                 return;
             }
             $line = implode(',', [
                 $backRefl['callingFile'],
                 $backRefl['callingLine'],
-                $backRefl['callingClass'],
-                $backRefl['callingMethod'],
+                $backRefl['calledClass'],
+                $backRefl['calledMethod'],
                 $paramName,
                 $paramWhere,
                 $paramType,
                 $argType
             ]);
+            // only log the exact same call once
             if (array_key_exists($line, $_ett_lines)) {
                 return;
             }
