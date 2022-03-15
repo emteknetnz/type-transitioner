@@ -330,7 +330,7 @@ if (!function_exists('_write_function_calls')) {
                     continue;
                 }
                 // cast null $arg - set by reference
-                $arg = settype($arg, $docBlockType);
+                settype($arg, $docBlockType);
                 break;
             }
         }
