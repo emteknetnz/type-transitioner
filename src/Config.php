@@ -1,10 +1,10 @@
 <?php
 
-namespace emteknetnz\TypeTransitioner\Config;
+namespace emteknetnz\TypeTransitioner;
 
-// TODO: something better that reads from silverstripe yml config
+// TODO: read from silverstripe yml config, probably get rid of this class
 
-final class Config
+final class Config extends Singleton
 {
     public const CAST_NULL = 'CAST_NULL';
     public const TRIGGER_E_USER_DEPRECATED = 'TRIGGER_E_USER_DEPRECATED';
@@ -16,23 +16,14 @@ final class Config
         self::THROW_TYPE_EXCEPTION => false,
     ];
 
-    private static ?Config $inst = null;
-
-    public static function inst(): self
-    {
-        if (is_null(self::$inst)) {
-            self::$inst = new self();
-        }
-        return self::$inst;
-    }
     public static function get(string $key): bool
     {
-        return self::inst()->getConfig()[$key];
+        return self::getInstance()->getConfig()[$key];
     }
 
     public static function set(string $key, bool $value): void
     {
-        self::inst()->getConfig()[$key] = $value;
+        self::getInstance()->getConfig()[$key] = $value;
     }
 
     public function getConfig(): array

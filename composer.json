@@ -12,7 +12,7 @@
             "emteknetnz\\TypeTransitioner\\": "src/"
         },
         "files": [
-            "src/Globals/functions.php"
+            "src/functions.php"
         ]
     },
     "authors": [

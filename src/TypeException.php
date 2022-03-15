@@ -1,6 +1,6 @@
 <?php
 
-namespace emteknetnz\TypeTransitioner\Exceptions;
+namespace emteknetnz\TypeTransitioner;
 
 use Exception;
 
