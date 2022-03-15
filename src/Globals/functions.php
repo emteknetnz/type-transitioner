@@ -88,7 +88,10 @@ if (!function_exists('_write_function_calls')) {
             foreach ($methodDataArr as $methodData) {
                 $calls = [];
                 $writeA = false;
-                $paramNum = -1;
+                // $paramNum will start at 1 to match PHP error messages, e.g.
+                // "[Warning] nl2br() expects parameter 1 to be string, array given"
+                // where parameter 1 is the first paramter
+                $paramNum = 0;
                 $method = $methodData['method'];
                 foreach ($methodData['methodParamTypes'] as $paramName => $methodParamType) {
                     $paramNum++;
@@ -290,10 +293,12 @@ if (!function_exists('_write_function_calls')) {
             return 'array';
         } elseif (is_bool($arg)) {
             return 'bool';
+        } elseif (is_resource($arg)){
+            return 'resource';
         } elseif (is_callable($arg)) {
             return 'callable';
         } elseif (is_object($arg)) {
-            return  get_class($arg);
+            return get_class($arg);
         }
         return 'unknown';
     }
@@ -398,11 +403,15 @@ if (!function_exists('_write_function_calls')) {
             }
         }
 
+        // Throw warnings about incorrect param types
+        // PHP wrong argument errors are actually simpler, they show arguments number (starting at 1)
+        // rather than the name of the variable that's wrong, e.g.
+        // "[Warning] nl2br() expects parameter 1 to be string, array given"
         if ($config->get(Config::TRIGGER_E_USER_DEPRECATED) || $config->get(Config::THROW_TYPE_EXCEPTION)) {
             if (!_ett_arg_matches_docblock_type_str($arg, $docBlockTypeStr)) {
                 $argType = _ett_get_arg_type($arg);
                 $backRefl = _ett_backtrace_reflection();
-                $paramName = array_keys($backRefl['methodData']['methodParamTypes'])[$paramNum];
+                $paramName = array_keys($backRefl['methodData']['methodParamTypes'])[$paramNum - 1];
                 if ($config->get(Config::TRIGGER_E_USER_DEPRECATED)) {
                     trigger_error(sprintf(
                         implode("\n", [

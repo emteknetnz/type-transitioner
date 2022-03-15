@@ -11,7 +11,7 @@ final class Config
     public const THROW_TYPE_EXCEPTION = 'THROW_TYPE_EXCEPTION';
 
     private $config = [
-        self::CAST_NULL => true,
+        self::CAST_NULL => false,
         self::TRIGGER_E_USER_DEPRECATED => false,
         self::THROW_TYPE_EXCEPTION => false,
     ];
