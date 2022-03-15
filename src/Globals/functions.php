@@ -89,37 +89,56 @@ if (!function_exists('_write_function_calls')) {
             foreach ($methodData as $data) {
                 $calls = [];
                 $writeA = false;
-                foreach ($data['methodParams'] as $var => $type) {
-                    if ($type != 'dynamic') {
+                $paramNum = -1;
+                $method = $data['method'];
+                foreach ($data['methodParams'] as $paramName => $methodParamType) {
+                    $paramNum++;
+                    if ($methodParamType != 'dynamic') {
                         continue;
                     }
-                    if ($data['methodParamFlags'][$var] == 0) {
-                        $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
-                        $docblockType = implode('|', array_map(function(string $type) {
-                            $type = ltrim($type, '\\');
-                            if ($type == 'true' || $type == 'false') {
-                                $type = 'bool';
-                            }
-                            // e.g. string[]
-                            if (strpos($type, '[]')) {
-                                $type = 'array';
-                            }
-                            if ($type == 'boolean') {
-                                $type = 'bool';
-                            }
-                            return $type;
-                        }, explode('|', $docblockType)));
-                        
-                        $docblockType = str_replace('|\\', '|', $docblockType);
-                        $docblockType = ltrim($docblockType, '\\');
-                        $calls[] = "_c('{$docblockType}', {$var});";
+                    if ($data['methodParamFlags'][$paramName] > 0) {
+                        continue;
                     }
+                    // $docblockType = $data['docblockParams'][$var] ?? 'dynamic';
+                    if (!isset($data['docblockParams'][$paramName])) {
+                        continue;
+                    }
+                    // these methods are used by _c() so exclude as to not cause infinite loop
+                    if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
+                        continue;
+                    }
+                    // clean up docblock types
+                    $docblockType = implode('|', array_map(function(string $type) {
+                        $type = ltrim($type, '\\');
+                        if ($type == 'true' || $type == 'false') {
+                            $type = 'bool';
+                        }
+                        // e.g. string[]
+                        if (strpos($type, '[]')) {
+                            $type = 'array';
+                        }
+                        if (strtolower($type) == 'boolean') {
+                            $type = 'bool';
+                        }
+                        if ($type == 'Object') {
+                            $type = 'object';
+                        }
+                        if (strtolower($type) == 'integer') {
+                            $type = 'int';
+                        }
+                        return $type;
+                    }, explode('|', $data['docblockParams'][$paramName])));
+                    if (strpos($docblockType, 'mixed') !== false) {
+                        continue;
+                    }
+                    $docblockType = str_replace('|\\', '|', $docblockType);
+                    $docblockType = ltrim($docblockType, '\\');
+                    $calls[] = "_c('{$docblockType}', {$paramName}, {$paramNum});";
                     $writeA = true;
                 }
                 if ($writeA) {
                     array_unshift($calls, '_a();');
                 }
-                $method = $data['method'];
                 preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
                 $fncontents = $m[1];
                 preg_match('#( *){#', $fncontents, $m2);
@@ -158,12 +177,12 @@ if (!function_exists('_write_function_calls')) {
                 $callingLine,
                 $calledClass,
                 $calledMethod,
-                $var,
+                $paramName,
                 $paramWhere,
                 $paramType,
                 $argType
             ) = $data;
-            // dockblock param is mixed, so arg can be anything
+            // docblock param is mixed, so arg can be anything
             if ($paramType == 'mixed') {
                 continue;
             }
@@ -180,8 +199,8 @@ if (!function_exists('_write_function_calls')) {
             if ($match) {
                 continue;
             }
-            // dockblock param (include undocblocked param) does not match arg
-            $param = "({$paramType}) {$var}";
+            // docblock param (include undocblocked param) does not match arg
+            $param = "({$paramType}) {$paramName}";
             $res[$calledClass][$calledMethod][$param] ??= [];
             $call = "({$argType}) {$callingFile}:{$callingLine}";
             if (!in_array($call, $res[$calledClass][$calledMethod][$param])) {
@@ -277,8 +296,17 @@ if (!function_exists('_write_function_calls')) {
         return $a[count($a) - 1];
     }
 
-    // cast scalars if null - used for php81 compatibility - dev + live
-    function _c(string $docBlockTypeStr, &$arg): void
+    function _ett_describe_type(string $str): string
+    {
+        if ($str == 'null') {
+            return 'null';
+        }
+        $c = $str[0] ?? '';
+        $a = ($c == 'a' || $c == 'e' || $c == 'i' || $c =='o' || $c == 'u') ? 'an' : 'a';
+        return "$a '$str'";
+    }
+
+    function _c(string $docBlockTypeStr, &$arg, int $paramNum): void
     {
         global $_writing_function_calls;
         if ($_writing_function_calls) {
@@ -310,13 +338,17 @@ if (!function_exists('_write_function_calls')) {
         if ($config->get(Config::TRIGGER_E_USER_DEPRECATED) || $config->get(Config::THROW_TYPE_EXCEPTION)) {
             $isValidType = false;
             $argType = _ett_get_arg_type($arg);
-            $isObject = is_object($argType);
+            $isObject = is_object($arg);
             foreach ($docBlockTypes as $docBlockType) {
                 if ($argType == $docBlockType) {
                     $isValidType = true;
                     break;
                 }
                 if ($isObject) {
+                    if ($docBlockType == 'object') {
+                        $isValidType = true;
+                        break;
+                    }
                     $docBlockTypeClassNameOnly = _ett_get_classname_only($docBlockType);
                     if (_ett_get_classname_only($argType) == $docBlockTypeClassNameOnly) {
                         $isValidType = true;
@@ -331,17 +363,64 @@ if (!function_exists('_write_function_calls')) {
                 }
             }
             if (!$isValidType) {
-                // TODO - may need reflection/backtrace
-                // name of the argument that failed validation so can make a coherent message
-                $message = sprintf("My message");
+                $backRefl = _ett_backtrace_reflection();
+                $paramName = array_keys($backRefl['methodData']['methodParams'])[$paramNum];
                 if ($config->get(Config::TRIGGER_E_USER_DEPRECATED)) {
-                    @trigger_error($message, \E_USER_DEPRECATED);
+                    trigger_error(sprintf(
+                        implode("\n", [
+                            "%s::%s() - %s is %s but should be %s",
+                            'Called from %s:%s'
+                        ]),
+                        $backRefl['calledClass'],
+                        $backRefl['calledMethod'],
+                        $paramName,
+                        _ett_describe_type($argType),
+                        _ett_describe_type($docBlockTypeStr),
+                        $backRefl['callingFile'],
+                        $backRefl['callingLine']
+                    ), \E_USER_DEPRECATED);
                 }
                 if ($config->get(Config::THROW_TYPE_EXCEPTION)) {
-                    throw new TypeException($message);
+                    throw new TypeException(sprintf(
+                        "%s::%s() - %s is %s but must be %s",
+                        $backRefl['calledClass'],
+                        $backRefl['calledMethod'],
+                        $paramName,
+                        $paramName,
+                        _ett_describe_type($argType),
+                        _ett_describe_type($docBlockTypeStr),
+                    ));
                 }
             }
         }
+    }
+
+    function _ett_backtrace_reflection(): array
+    {
+        global $_ett_method_cache;
+        $d = debug_backtrace(0, 4);
+        // will use $d[3] in the case of call_user_func
+        $callingFile = $d[2]['file'] ?? ($d[3]['file'] ?? '');
+        $callingLine = $d[2]['line'] ?? ($d[3]['line'] ?? '');
+        $calledClass = $d[2]['class'] ?? '';
+        // $callType = $d[2]['type'] ?? '';
+        $calledMethod = $d[2]['function'] ?? '';
+        $args = $d[2]['args'] ?? [];
+        $key = $calledClass . '::' . $calledMethod;
+        if (!array_key_exists($key, $_ett_method_cache)) {
+            $reflClass = new ReflectionClass($calledClass);
+            $reflMethod = $reflClass->getMethod($calledMethod);
+            $_tt_method_cache[$key] = _ett_get_method_data($reflClass, $reflMethod);
+        }
+        $methodData = $_tt_method_cache[$key];
+        return [
+            'callingFile' => $callingFile,
+            'callingLine' => $callingLine,
+            'calledClass' => $calledClass,
+            'calledMethod' => $calledMethod,
+            'args' => $args,
+            'methodData' => $methodData
+        ];
     }
 
     // dev only - uses reflection and backtraces
@@ -362,56 +441,37 @@ if (!function_exists('_write_function_calls')) {
             file_put_contents($outpath, '$callingFile, $callingLine, $calledClass, $calledMethod, $var, $paramWhere, $paramType, $argType'. "\n");
         }
 
-        $d = debug_backtrace(0, 3);
+        $backRefl = _ett_backtrace_reflection();
+        $methodData = $backRefl['methodData'];
 
-        // will use $d[2] in the case of call_user_func
-        $callingFile = $d[1]['file'] ?? ($d[2]['file'] ?? '');
-        $callingLine = $d[1]['line'] ?? ($d[2]['line'] ?? '');
-        $calledClass = $d[1]['class'] ?? '';
-        // $callType = $d[1]['type'] ?? '';
-        $calledMethod = $d[1]['function'] ?? '';
-        $args = $d[1]['args'] ?? [];
-
-        if (!$calledClass || !$calledMethod) {
-            return;
-            echo 'No class or method';die;
-        }
-
-        $key = $calledClass . '::' . $calledMethod;
-        if (!array_key_exists($key, $_ett_method_cache)) {
-            $reflClass = new ReflectionClass($calledClass);
-            $reflMethod = $reflClass->getMethod($calledMethod);
-            $_tt_method_cache[$key] = _ett_get_method_data($reflClass, $reflMethod);
-        }
-        $data = $_tt_method_cache[$key];
-        $vars = array_keys($data['methodParams']);
-        for ($i = 0; $i < count($vars); $i++) {
-            $var = $vars[$i];
-            if (!array_key_exists($i, $args)) {
+        $paramNames = array_keys($methodData['methodParams']);
+        for ($i = 0; $i < count($paramNames); $i++) {
+            $paramName = $paramNames[$i];
+            if (!array_key_exists($i, $methodData)) {
 
                 // optional args are a non issue, will use default which assumed to always be valid
-                if (($data['methodParamFlags'] & ETT_OPTIONAL) == ETT_OPTIONAL) {
+                if (($methodData['methodParamFlags'] & ETT_OPTIONAL) == ETT_OPTIONAL) {
                     continue;
                 }
                 // by reference arguments can start life as undefined and become a return var
                 // of sorts e.g. $m in preg_match($rx, $subject, $m);
-                if (($data['methodParamFlags'] & ETT_REFERENCE) == ETT_REFERENCE) {
+                if (($methodData['methodParamFlags'] & ETT_REFERENCE) == ETT_REFERENCE) {
                     continue;
                 }
                 // variadic args are always a mixed array, no need to validate
-                if (($data['methodParamFlags'] & ETT_VARIADIC) == ETT_VARIADIC) {
+                if (($methodData['methodParamFlags'] & ETT_VARIADIC) == ETT_VARIADIC) {
                     continue;
                 }
             }
-            $arg = $args[$i];
-            $paramType = $data['methodParams'][$var];
+            $arg = $methodData['args'][$i];
+            $paramType = $methodData['methodParams'][$paramName];
             $paramWhere = 'method';
             if ($paramType != 'dynamic') {
                 // strongly typed method params are a non-issue since they throw exceptions
                 return;
             }
-            if (array_key_exists($var, $data['docblockParams'])) {
-                $paramType = $data['docblockParams'][$var];
+            if (array_key_exists($paramName, $methodData['docblockParams'])) {
+                $paramType = $methodData['docblockParams'][$paramName];
                 $paramWhere = 'docblock';
             } else {
                 $paramType = 'dynamic';
@@ -426,7 +486,16 @@ if (!function_exists('_write_function_calls')) {
             if ($paramType == 'object' && is_object($arg)) {
                 return;
             }
-            $line = implode(',', [$callingFile, $callingLine, $calledClass, $calledMethod, $var, $paramWhere, $paramType, $argType]);
+            $line = implode(',', [
+                $backRefl['callingFile'],
+                $backRefl['callingLine'],
+                $backRefl['callingClass'],
+                $backRefl['callingMethod'],
+                $paramName,
+                $paramWhere,
+                $paramType,
+                $argType
+            ]);
             if (array_key_exists($line, $_ett_lines)) {
                 return;
             }
