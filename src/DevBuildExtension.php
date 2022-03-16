@@ -3,11 +3,11 @@
 namespace emteknetnz\TypeTransitioner;
 
 use emteknetnz\TypeTransitioner\CodeUpdater;
-use SilverStripe\ORM\DataObject;
+use SilverStripe\ORM\DataExtension;
 
 /*
-hackish class to use requireDefaultRecords() instead
-of doing code writing CodeUpdate implements Flushable, which seemed to create weird errors in CI e.g.
+Trying this instead of doing code writing CodeUpdate implements Flushable,
+which seemed to create weird errors in CI e.g.
 
 There were 34 errors:
 
@@ -21,14 +21,12 @@ Stack trace:
 #4 /home/runner/work/silverstripe-framework/silverstripe-framework/vendor/emteknetnz/type-transitioner/src/CodeUpdater.php(80): ReflectionClass->__construct()
 #5 /home/runner/work/silverstripe-framework/silverstripe-framework/vendor/emteknetnz/type-transitioner/src/CodeUpdater.php(14): emteknetnz\TypeTransitioner\CodeUpdater->updateCode()
 #6 /home/runner/work/silverstripe-framework/silverstripe-framework/src/Dev/State/FlushableTestState.php(43): emteknetnz\TypeTransitioner\CodeUpdater::flush()
-
 */
-class Updater extends DataObject
+
+class DevBuildExtension extends DataExtension
 {
-    public function requireDefaultRecords()
+    public function onAfterBuild()
     {
-        parent::requireDefaultRecords();
-        $codeUpdater = CodeUpdater::getInstance();
-        $codeUpdater->updateCode();
+        CodeUpdater::getInstance()->updateCode();
     }
 }

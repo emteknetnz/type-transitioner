@@ -1,0 +1,6 @@
+---
+Name: emteknetnz-type-transitioner-config
+---
+SilverStripe\ORM\DataObject:
+  extensions:
+    - emteknetnz\TypeTransitioner\DevBuildExtension
