@@ -28,6 +28,10 @@ class CodeUpdater extends Singleton implements Flushable
     private function updateFrameworkConstants()
     {
         $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework/src/includes/constants.php');
+        if (!file_exists($path)) {
+            // Running CI on framework module
+            $path = str_replace('//', '/', BASE_PATH . '/src/includes/constants.php');
+        }
         $contents = file_get_contents($path);
         if (strpos($contents, 'vendor/emteknetnz/type-transitioner') !== false) {
             return;
