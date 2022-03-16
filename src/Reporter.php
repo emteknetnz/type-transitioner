@@ -10,7 +10,11 @@ class Reporter
         if (file_exists(BASE_PATH . '/artifacts/combined.txt')) {
             $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett-combined.txt'));
         } else {
-            $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
+            if (file_exists(BASE_PATH . '/artifacts/ett.txt')) {
+                $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
+            } else {
+                return;
+            }
         }
 
         // unique lines (in case putting together multiple log files)
