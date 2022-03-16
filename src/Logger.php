@@ -2,39 +2,20 @@
 
 namespace emteknetnz\TypeTransitioner;
 
-use SilverStripe\Core\Flushable;
-
-class Logger extends Singleton implements Flushable
+class Logger extends Singleton
 {
     private $lines = [];
 
-    public static function flush(): void
-    {
-        self::getInstance()->initLogFile();
-    }
-
-    public function initLogFile(): void
-    {
-        $path = $this->getPath();
-        $dir = dirname($path);
-        if (!file_exists($dir)) {
-            mkdir($dir);
-        }
-        $headers = implode(',', [
-            'callingFile',
-            'callingLine',
-            'calledClass',
-            'calledMethod',
-            'paramName',
-            'paramWhere',
-            'paramType',
-            'argType'
-        ]) . "\n";
-        file_put_contents($path, $headers);
-    }
-
     public function writeLine(string $line): void
     {
+        $this->ensureLogFileExists();
+        // add header if missing
+        if (empty($this->lines)) {
+            $line = $this->getHeaderLine();
+            $key = md5($line);
+            file_put_contents($this->getPath(), $line . "\n");
+            $this->lines[$key] = true;
+        }
         // only write unique lines
         $key = md5($line);
         if (array_key_exists($key, $this->lines)) {
@@ -43,6 +24,38 @@ class Logger extends Singleton implements Flushable
         $line = trim($line, "\n") . "\n";
         file_put_contents($this->getPath(), $line, FILE_APPEND);
         $this->lines[$key] = true;
+    }
+
+    public function clearLogFile(): void
+    {
+        $this->ensureLogFileExists();
+        file_put_contents($this->getPath(), '');
+    }
+
+    private function ensureLogFileExists(): void
+    {
+        $path = $this->getPath();
+        if (file_exists($path)) {
+            return;
+        }
+        $dir = dirname($path);
+        if (!file_exists($dir)) {
+            mkdir($dir);
+        }
+    }
+
+    private function getHeaderLine(): string
+    {
+        return implode(',', [
+            'callingFile',
+            'callingLine',
+            'calledClass',
+            'calledMethod',
+            'paramName',
+            'paramWhere',
+            'paramType',
+            'argType'
+        ]);
     }
 
     private function getPath(): string

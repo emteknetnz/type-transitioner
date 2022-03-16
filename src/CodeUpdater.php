@@ -49,7 +49,7 @@ class CodeUpdater extends Singleton implements Flushable
         $this->updateFrameworkConstants();
         
         // TODO: what?
-        //require_once Util::joinPaths(BASE_PATH, '/vendor/emteknetnz/type-transitioner/src/Globals/functions.php');
+        //require_once Util::joinPaths(BASE_PATH, '/vendor/emteknetnz/type-transitioner/src/functions.php');
 
         $paths = explode("\n", shell_exec('find ' . BASE_PATH . '/vendor/silverstripe/framework | grep .php$'));
         foreach ($paths as $path) {
