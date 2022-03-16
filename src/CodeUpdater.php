@@ -48,10 +48,12 @@ class CodeUpdater extends Singleton implements Flushable
         $this->updatingCode = true;
         $this->updateFrameworkConstants();
         
-        // TODO: what?
-        //require_once Util::joinPaths(BASE_PATH, '/vendor/emteknetnz/type-transitioner/src/functions.php');
-
-        $paths = explode("\n", shell_exec('find ' . BASE_PATH . '/vendor/silverstripe/framework | grep .php$'));
+        $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework');;
+        if (!file_exists($path)) {
+            // Running CI on framework module
+            $path = str_replace('//', '/', BASE_PATH);
+        }
+        $paths = explode("\n", shell_exec("find {$path} | grep .php$"));
         foreach ($paths as $path) {
             if (strpos($path, '/src/') === false && strpos($path, '/code/') === false) {
                 continue;
