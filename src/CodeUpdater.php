@@ -3,43 +3,14 @@
 namespace emteknetnz\TypeTransitioner;
 
 use ReflectionClass;
-use SilverStripe\Core\Flushable;
 
-class CodeUpdater extends Singleton implements Flushable
+class CodeUpdater extends Singleton
 {
     private $updatingCode = false;
-
-    public static function flush()
-    {
-        self::getInstance()->updateCode();
-    }
 
     public function isUpdatingCode(): bool
     {
         return $this->updatingCode;
-    }
-
-    // TODO: something more proper
-    // ! this is pretty horrid - will make it look like we have fresh changes to git commit in framework
-    // 
-    // need to update framework constants.php, which loads as part of the index.php during
-    // require __DIR__ . '/../vendor/autoload.php';
-    // i.e. before autoloader has loaded emteknetnz functions.php
-    private function updateFrameworkConstants()
-    {
-        $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework/src/includes/constants.php');
-        if (!file_exists($path)) {
-            // Running CI on framework module
-            $path = str_replace('//', '/', BASE_PATH . '/src/includes/constants.php');
-        }
-        $contents = file_get_contents($path);
-        if (strpos($contents, 'vendor/emteknetnz/type-transitioner') !== false) {
-            return;
-        }
-        $search = "require_once __DIR__ . '/functions.php';";
-        $functionsPath = str_replace('//', '/', BASE_PATH . '/vendor/emteknetnz/type-transitioner/src/functions.php');
-        $newLine = "require_once '{$functionsPath}';";
-        file_put_contents($path, str_replace($search, "$newLine\n$search", $contents));
     }
 
     public function updateCode()
@@ -155,5 +126,28 @@ class CodeUpdater extends Singleton implements Flushable
             file_put_contents($path, $contents);
             $this->updatingCode = false;
         }
+    }
+
+    // TODO: something more proper
+    // ! this is pretty horrid - will make it look like we have fresh changes to git commit in framework
+    // 
+    // need to update framework constants.php, which loads as part of the index.php during
+    // require __DIR__ . '/../vendor/autoload.php';
+    // i.e. before autoloader has loaded emteknetnz functions.php
+    private function updateFrameworkConstants()
+    {
+        $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework/src/includes/constants.php');
+        if (!file_exists($path)) {
+            // Running CI on framework module
+            $path = str_replace('//', '/', BASE_PATH . '/src/includes/constants.php');
+        }
+        $contents = file_get_contents($path);
+        if (strpos($contents, 'vendor/emteknetnz/type-transitioner') !== false) {
+            return;
+        }
+        $search = "require_once __DIR__ . '/functions.php';";
+        $functionsPath = str_replace('//', '/', BASE_PATH . '/vendor/emteknetnz/type-transitioner/src/functions.php');
+        $newLine = "require_once '{$functionsPath}';";
+        file_put_contents($path, str_replace($search, "$newLine\n$search", $contents));
     }
 }
