@@ -7,16 +7,19 @@ class Reporter
 {
     function report()
     {
-        global $_writing_function_calls;
-        if ($_writing_function_calls) {
-            return;
+        if (file_exists(BASE_PATH . '/artifacts/combined.txt')) {
+            $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett-combined.txt'));
+        } else {
+            $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
         }
-        $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
-        // remove header
+
+        // unique lines (in case putting together multiple log files)
+        $lines = array_unique($lines);
+
+        // remove header line
         array_shift($lines);
 
         $res = [];
-
         foreach ($lines as $line) {
             if (empty($line)) {
                 continue;

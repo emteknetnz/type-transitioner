@@ -42,6 +42,7 @@ class Logger extends Singleton
         if (!file_exists($dir)) {
             mkdir($dir);
         }
+        file_put_contents($path, '');
     }
 
     private function getHeaderLine(): string
