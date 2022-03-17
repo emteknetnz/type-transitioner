@@ -190,4 +190,15 @@ class MethodAnalyser extends Singleton
         }
         return false;
     }
+
+    function argTypeMatchesDockblockTypeStr(string $argType, string $docblockTypeStr)
+    {
+        $docBlockTypes = explode('|', $this->cleanDocblockTypeStr($docblockTypeStr));
+        foreach ($docBlockTypes as $docBlockType) {
+            if ($argType == $docBlockType) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
