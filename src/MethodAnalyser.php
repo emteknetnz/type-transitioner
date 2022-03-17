@@ -6,6 +6,7 @@ use ReflectionClass;
 use ReflectionMethod;
 use ReflectionParameter;
 use SilverStripe\Core\ClassInfo;
+use SilverStripe\Core\Manifest\ClassLoader;
 
 class MethodAnalyser extends Singleton
 {
@@ -14,6 +15,7 @@ class MethodAnalyser extends Singleton
     public const ETT_VARIADIC = 4;
 
     private $methodCache = [];
+    private $fqcnCache = [];
 
     function cleanDocblockTypeStr(string $docblockTypeStr): string
     {
@@ -170,6 +172,7 @@ class MethodAnalyser extends Singleton
         $argType = $this->getArgType($arg);
         $isObject = is_object($arg);
         foreach ($docBlockTypes as $docBlockType) {
+            $docBlockType = $this->shortClassNameToFqcn($docBlockType);
             if ($argType == $docBlockType) {
                 return true;
             }
@@ -195,10 +198,52 @@ class MethodAnalyser extends Singleton
     {
         $docBlockTypes = explode('|', $this->cleanDocblockTypeStr($docblockTypeStr));
         foreach ($docBlockTypes as $docBlockType) {
+            $docBlockType = $this->shortClassNameToFqcn($docBlockType);
             if ($argType == $docBlockType) {
                 return true;
             }
         }
         return false;
+    }
+
+    function typeIsClass(string $type): bool
+    {
+        return !array_key_exists(strtolower($type), [
+            'string' => false,
+            'bool' => false,
+            'boolean' => false,
+            'true' => false,
+            'false' => false,
+            'int' => false,
+            'integer' => false,
+            'float' => false,
+            'double' => false,
+            'array' => false,
+            // 'object' => false,
+            'null' => false,
+            'callable' => false
+        ]);
+    }
+
+    function shortClassNameToFqcn(string $shortClassName): string
+    {
+        if ($shortClassName == '' || !$this->typeIsClass($shortClassName)) {
+            return $shortClassName;
+        }
+        if (strpos($shortClassName, "\\") !== false || strtolower($shortClassName) == 'object') {
+            return $shortClassName;
+        }
+        if (empty($this->fqcnLookup)) {
+            $manifest = ClassLoader::inst()->getManifest();
+            if ($manifest && !empty($manifest->getClasses())) {
+                $fqcns = array_merge($manifest->getClassNames(), $manifest->getInterfaceNames());
+                foreach ($fqcns as $fqcn) {
+                    $a = explode("\\", $fqcn);
+                    $lcShortClassName = strtolower(array_pop($a));
+                    $this->fqcnLookup[$lcShortClassName] = $fqcn;
+                }
+            }
+        }
+        return $this->fqcnLookup[strtolower($shortClassName)] ?? $shortClassName;
     }
 }

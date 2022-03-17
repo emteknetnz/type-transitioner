@@ -75,13 +75,25 @@ class Reporter
                 $printrArr[$calledClass][$calledMethod][$param][] = $call;
             }
 
+            $call = "{$callingFile}:{$callingLine}";
             if ($paramType == 'dynamic') {
                 $classMethodsWithoutDocblocks[$calledClass][$calledMethod][$paramName][$argType] ??= [];
-                $classMethodsWithoutDocblocks[$calledClass][$calledMethod][$paramName][$argType][] = "{$callingFile}:{$callingLine}";
+                $classMethodsWithoutDocblocks[$calledClass][$calledMethod][$paramName][$argType][] = $call;
+            }
+            if ($paramType != 'dynamic' && $argType == 'null') {
+                $classMethodsWithDocblocksPassedNull[$calledClass][$calledMethod][$paramName] ?? [];
+                $classMethodsWithDocblocksPassedNull[$calledClass][$calledMethod][$paramName][$paramType][] = $call;
+            }
+            if ($paramType != 'dynamic') { //  && $argType != 'null'
+                // possibly combine this with $classMethodsWithDocblocksPassedNull, or at least
+                // just filter out when `null` is the only $argType that's wrong
+                $classMethodsWrongDocblocks[$calledClass][$calledMethod][$paramName][$paramType][$argType] ??= [];
+                $classMethodsWrongDocblocks[$calledClass][$calledMethod][$paramName][$paramType][$argType][] = $call;
             }
         }
 
         $classMethodsNewDocblocks = [];
+
         foreach (array_keys($classMethodsWithoutDocblocks) as $calledClass) {
             foreach (array_keys($classMethodsWithoutDocblocks[$calledClass]) as $calledMethod) {
                 foreach (array_keys($classMethodsWithoutDocblocks[$calledClass][$calledMethod]) as $paramName) {
@@ -96,8 +108,35 @@ class Reporter
                 }
             }
         }
+
+        $classMethodsWrongDocblocksExOnlyNull = [];
+        $a = $classMethodsWrongDocblocks;
+        foreach (array_keys($a) as $calledClass) {
+            foreach (array_keys($a[$calledClass]) as $calledMethod) {
+                foreach (array_keys($a[$calledClass][$calledMethod]) as $paramName) {
+                    foreach (array_keys($a[$calledClass][$calledMethod][$paramName]) as $paramType) {
+                        $argTypes = array_keys($a[$calledClass][$calledMethod][$paramName][$paramType]);
+                        if (count($argTypes) == 1 && $argTypes[0] == 'null') {
+                            continue;
+                        }
+                        $v = $a[$calledClass][$calledMethod][$paramName];
+                        $classMethodsWrongDocblocksExOnlyNull[$calledClass][$calledMethod][$paramName] = $v;
+                    }
+                }
+            }
+        }
+
+        // need to check these? they'll get affected by _c() casting
+        // e.g. Permission::checkMember() maybe should change from int|Member to int|Member|null
+        // print_r($classMethodsWithDocblocksPassedNull);
+
+        // would create PR's to add new docblocks as well as _c() (redo updateCode() call after write new docblocks)
+        // print_r($classMethodsNewDocblocks);
         // print_r($classMethodsWithoutDocblocks);
-        print_r($classMethodsNewDocblocks);
+
+        // would probably need to check these calls first, then do PRs to update docblocks and _c() calls
+        print_r($classMethodsWrongDocblocksExOnlyNull);
+
         // print_r($printrArr);die;
         die;
     }
