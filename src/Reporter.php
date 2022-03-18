@@ -130,11 +130,12 @@ class Reporter
         // e.g. Permission::checkMember() maybe should change from int|Member to int|Member|null
         // print_r($classMethodsWithDocblocksPassedNull);
 
-        // would create PR's to add new docblocks as well as _c() (redo updateCode() call after write new docblocks)
+        // us to automatically add new docblocks as well as _c() (redo updateCode() call after write new docblocks)
         // print_r($classMethodsNewDocblocks);
         // print_r($classMethodsWithoutDocblocks);
 
-        // would probably need to check these calls first, then do PRs to update docblocks and _c() calls
+        // manually check these calls and update docblocks, then generate new _c() calls
+        // probably do as seperate PRs to automatic generation above
         print_r($classMethodsWrongDocblocksExOnlyNull);
 
         // print_r($printrArr);die;

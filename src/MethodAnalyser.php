@@ -123,12 +123,6 @@ class MethodAnalyser extends Singleton
         return 'unknown';
     }
 
-    function getClassNameOnly(string $fqcn): string
-    {
-        $a = explode('\\', $fqcn);
-        return $a[count($a) - 1];
-    }
-
     function describeType(string $str): string
     {
         if ($str == 'null') {
@@ -168,38 +162,30 @@ class MethodAnalyser extends Singleton
 
     function argMatchesDockblockTypeStr($arg, string $docblockTypeStr)
     {
-        $docBlockTypes = explode('|', $this->cleanDocblockTypeStr($docblockTypeStr));
-        $argType = $this->getArgType($arg);
-        $isObject = is_object($arg);
-        foreach ($docBlockTypes as $docBlockType) {
-            $docBlockType = $this->shortClassNameToFqcn($docBlockType);
-            if ($argType == $docBlockType) {
-                return true;
-            }
-            if ($isObject) {
-                if ($docBlockType == 'object') {
-                    return true;
-                }
-                $docBlockTypeClassNameOnly = $this->getClassNameOnly($docBlockType);
-                if ($this->getClassNameOnly($argType) == $docBlockTypeClassNameOnly) {
-                    return true;
-                }
-                foreach (ClassInfo::ancestry($arg) as $ancestorClass) {
-                    if ($this->getClassNameOnly($ancestorClass) == $docBlockTypeClassNameOnly) {
-                        return true;;
-                    }
-                }
-            }
-        }
-        return false;
+        return $this->argTypeMatchesDockblockTypeStr($this->getArgType($arg), $docblockTypeStr);
     }
 
     function argTypeMatchesDockblockTypeStr(string $argType, string $docblockTypeStr)
     {
+        $lcArgType = strtolower($this->fqcnToShortClassName($argType));
         $docBlockTypes = explode('|', $this->cleanDocblockTypeStr($docblockTypeStr));
         foreach ($docBlockTypes as $docBlockType) {
-            $docBlockType = $this->shortClassNameToFqcn($docBlockType);
-            if ($argType == $docBlockType) {
+            $lcDocBlockType = strtolower($this->fqcnToShortClassName($docBlockType));
+            if ($lcDocBlockType == 'object' || strtolower($argType) == $lcDocBlockType) {
+                return true;
+            }
+            if (!$this->typeIsClass($argType)) {
+                continue;
+            }
+            $lcDocblockShortClassName = strtolower($this->fqcnToShortClassName($docBlockType));
+            if ($lcArgType == $lcDocblockShortClassName) {
+                return true;
+            }
+            $fqcnDocBlockType = $this->shortClassNameToFqcn($docBlockType);
+            if (
+                is_a($argType, $fqcnDocBlockType) ||
+                (class_exists($argType) && array_key_exists($fqcnDocBlockType, class_implements($argType)))
+            ) {
                 return true;
             }
         }
@@ -245,5 +231,11 @@ class MethodAnalyser extends Singleton
             }
         }
         return $this->fqcnLookup[strtolower($shortClassName)] ?? $shortClassName;
+    }
+
+    function fqcnToShortClassName(string $fqcn): string
+    {
+        $a = explode('\\', $fqcn);
+        return $a[count($a) - 1];
     }
 }
