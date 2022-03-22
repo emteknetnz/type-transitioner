@@ -7,7 +7,7 @@ use SilverStripe\ORM\DataExtension;
 
 /*
 Trying this instead of doing code writing CodeUpdate implements Flushable,
-which seemed to create weird errors in CI e.g.
+which seemed to create weird errors in CI, though only when running direcltly on framework module e.g.
 
 There were 34 errors:
 

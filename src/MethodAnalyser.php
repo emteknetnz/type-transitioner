@@ -5,7 +5,6 @@ namespace emteknetnz\TypeTransitioner;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionParameter;
-use SilverStripe\Core\ClassInfo;
 use SilverStripe\Core\Manifest\ClassLoader;
 
 class MethodAnalyser extends Singleton
@@ -16,9 +15,14 @@ class MethodAnalyser extends Singleton
 
     private $methodCache = [];
     private $fqcnCache = [];
+    private $docDocblockTypeStrCache = [];
 
     function cleanDocblockTypeStr(string $docblockTypeStr): string
     {
+        $key = md5($docblockTypeStr);
+        if (array_key_exists($key, $this->docDocblockTypeStrCache)) {
+            return $this->docDocblockTypeStrCache[$key];
+        }
         $str = implode('|', array_map(function(string $type) {
             $type = ltrim($type, '\\');
             if ($type == 'true' || $type == 'false') {
@@ -40,9 +44,12 @@ class MethodAnalyser extends Singleton
             return $type;
         }, explode('|', $docblockTypeStr)));
         $str = str_replace('|\\', '|', $str);
-        return ltrim($str, '\\');
+        $value = ltrim($str, '\\');
+        $this->docDocblockTypeStrCache[$key] = $value;
+        return $value;
     }
 
+    // cache to disk? help with behat between requests
     function getMethodData(ReflectionClass $reflClass, ReflectionMethod $reflMethod)
     {
         // https://www.php.net/manual/en/book.reflection.php
@@ -101,27 +108,49 @@ class MethodAnalyser extends Singleton
 
     function getArgType($arg): string
     {
-        if (is_null($arg)) {
-            return 'null';
-        } elseif (is_string($arg)) {
-            return 'string';
-        } elseif (is_int($arg)) {
-            return 'int';
-        } elseif (is_float($arg)) {
-            return 'float';
-        } elseif (is_array($arg)) {
-            return 'array';
-        } elseif (is_bool($arg)) {
-            return 'bool';
-        } elseif (is_resource($arg)){
-            return 'resource';
-        } elseif (is_callable($arg)) {
+        if (is_callable($arg)) {
             return 'callable';
-        } elseif (is_object($arg)) {
-            return get_class($arg);
         }
-        return 'unknown';
+        $type = gettype($arg);
+        switch($type) {
+            case 'NULL':
+                return 'null';
+                break;
+            case 'boolean':
+                return 'bool';
+                break;
+            case 'integer':
+                return 'int';
+                break;
+            case 'double':
+                return 'float';
+                break;
+            case 'string':
+                return 'string';
+                break;
+            case 'array':
+                return 'array';
+                break;
+            case 'object':
+                return get_class($arg);
+                break;
+            case 'resource':
+            case 'resource (closed)':
+                return 'resource';
+                break;
+            default:
+                return 'unknown';
+                break;
+        }
     }
+
+    private $vowels = [
+        'a' => true,
+        'e' => true,
+        'i' => true,
+        'o' => true,
+        'u' => true
+    ];
 
     function describeType(string $str): string
     {
@@ -129,7 +158,7 @@ class MethodAnalyser extends Singleton
             return 'null';
         }
         $c = $str[0] ?? '';
-        $a = ($c == 'a' || $c == 'e' || $c == 'i' || $c =='o' || $c == 'u') ? 'an' : 'a';
+        $a = array_key_exists($c, $this->vowels) ? 'an' : 'a';
         return "$a '$str'";
     }
 
@@ -192,23 +221,25 @@ class MethodAnalyser extends Singleton
         return false;
     }
 
+    private $nonClassTypes = [
+        'string' => true,
+        'bool' => true,
+        'boolean' => true,
+        'true' => true,
+        'false' => true,
+        'int' => true,
+        'integer' => true,
+        'float' => true,
+        'double' => true,
+        'array' => true,
+        // 'object' => true,
+        'null' => true,
+        'callable' => true
+    ];
+
     function typeIsClass(string $type): bool
     {
-        return !array_key_exists(strtolower($type), [
-            'string' => false,
-            'bool' => false,
-            'boolean' => false,
-            'true' => false,
-            'false' => false,
-            'int' => false,
-            'integer' => false,
-            'float' => false,
-            'double' => false,
-            'array' => false,
-            // 'object' => false,
-            'null' => false,
-            'callable' => false
-        ]);
+        return !array_key_exists(strtolower($type), $this->nonClassTypes);
     }
 
     function shortClassNameToFqcn(string $shortClassName): string
@@ -219,18 +250,19 @@ class MethodAnalyser extends Singleton
         if (strpos($shortClassName, "\\") !== false || strtolower($shortClassName) == 'object') {
             return $shortClassName;
         }
-        if (empty($this->fqcnLookup)) {
+        if (empty($this->fqcnCache)) {
             $manifest = ClassLoader::inst()->getManifest();
             if ($manifest && !empty($manifest->getClasses())) {
                 $fqcns = array_merge($manifest->getClassNames(), $manifest->getInterfaceNames());
                 foreach ($fqcns as $fqcn) {
                     $a = explode("\\", $fqcn);
                     $lcShortClassName = strtolower(array_pop($a));
-                    $this->fqcnLookup[$lcShortClassName] = $fqcn;
+                    $this->fqcnCache[$lcShortClassName] = $fqcn;
                 }
             }
         }
-        return $this->fqcnLookup[strtolower($shortClassName)] ?? $shortClassName;
+        $lcShortClassName = strtolower($shortClassName);
+        return $this->fqcnCache[$lcShortClassName] ?? $shortClassName;
     }
 
     function fqcnToShortClassName(string $fqcn): string
