@@ -5,15 +5,19 @@ namespace emteknetnz\TypeTransitioner;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionParameter;
+use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Core\Manifest\ClassLoader;
+use Psr\SimpleCache\CacheInterface;
+use SilverStripe\Core\Flushable;
+use SilverStripe\Core\Injector\InjectorLoader;
 
-class MethodAnalyser extends Singleton
+class MethodAnalyser extends Singleton implements Flushable
 {
     public const ETT_OPTIONAL = 1;
     public const ETT_REFERENCE = 2;
     public const ETT_VARIADIC = 4;
 
-    private $methodCache = [];
+    private $methodDataCache = [];
     private $fqcnCache = [];
     private $docDocblockTypeStrCache = [];
 
@@ -108,9 +112,6 @@ class MethodAnalyser extends Singleton
 
     function getArgType($arg): string
     {
-        if (is_callable($arg)) {
-            return 'callable';
-        }
         $type = gettype($arg);
         switch($type) {
             case 'NULL':
@@ -139,7 +140,7 @@ class MethodAnalyser extends Singleton
                 return 'resource';
                 break;
             default:
-                return 'unknown';
+                return is_callable($arg) ? 'callable' : 'unknown';
                 break;
         }
     }
@@ -162,6 +163,24 @@ class MethodAnalyser extends Singleton
         return "$a '$str'";
     }
 
+    public static function getCache(): ?CacheInterface
+    {
+        try {
+            $cache = Injector::inst()->get(CacheInterface::class . '.MethodAnalyser');
+            return $cache;
+        } catch (\Exception $e) {
+            // if calling from constants.php on boot, Injector Manifest and other things
+            // won't be available
+            return null;
+        }
+    }
+
+    public static function flush()
+    {
+        $cache = static::getCache();
+        $cache->clear();
+    }
+
     function getBacktraceReflection(): array
     {
         $d = debug_backtrace(0, 4);
@@ -172,13 +191,23 @@ class MethodAnalyser extends Singleton
         // $callType = $d[2]['type'] ?? '';
         $calledMethod = $d[2]['function'] ?? '';
         $args = $d[2]['args'] ?? [];
-        $key = $calledClass . '::' . $calledMethod;
-        if (!array_key_exists($key, $this->methodCache)) {
-            $reflClass = new ReflectionClass($calledClass);
-            $reflMethod = $reflClass->getMethod($calledMethod);
-            $this->methodCache[$key] = $this->getMethodData($reflClass, $reflMethod);
+        $key = md5($calledClass . '.' . $calledMethod);
+        // use memory cache first, then disk cache
+        if (!array_key_exists($key, $this->methodDataCache)) {
+            $cache = $this->getCache();
+            if ($cache && $cache->has($key)) {
+                $methodData = $cache->get($key);
+            } else {
+                $reflClass = new ReflectionClass($calledClass);
+                $reflMethod = $reflClass->getMethod($calledMethod);
+                $methodData = $this->getMethodData($reflClass, $reflMethod);
+                if ($cache) {
+                    $cache->set($key, $methodData);
+                }
+            }
+            $this->methodDataCache[$key] = $methodData;
         }
-        $methodData = $this->methodCache[$key];
+        $methodData = $this->methodDataCache[$key];
         return [
             'callingFile' => $callingFile,
             'callingLine' => $callingLine,

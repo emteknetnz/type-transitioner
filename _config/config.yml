@@ -4,3 +4,9 @@ Name: emteknetnz-type-transitioner-config
 SilverStripe\ORM\DataObject:
   extensions:
     - emteknetnz\TypeTransitioner\DevBuildExtension
+
+SilverStripe\Core\Injector\Injector:
+  Psr\SimpleCache\CacheInterface.MethodAnalyser:
+    factory: SilverStripe\Core\Cache\CacheFactory
+    constructor:
+      namespace: "MethodAnalyser"

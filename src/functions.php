@@ -9,11 +9,22 @@ use emteknetnz\TypeTransitioner\TypeException;
 // this will get included twice
 if (!function_exists('_c')) {
 
+    // used to prevent infinite loops when something in _a() or _c() calls
+    // a framework method that contains _a() or _c()
+    global $_ett_paused;
+    $_ett_paused = false;
+
     function _c(string $docBlockTypeStr, &$arg, int $paramNum): void
     {
+        global $_ett_paused;
+        if ($_ett_paused) {
+            return;
+        }
         if (CodeUpdater::getInstance()->isUpdatingCode()) {
             return;
         }
+        $_ett_paused = true;
+        $methodAnalyser = MethodAnalyser::getInstance();
         $config = Config::getInstance();
         $nonObjectTypes = [
             'string' => true,
@@ -36,7 +47,6 @@ if (!function_exists('_c')) {
                 break;
             }
         }
-        $methodAnalyser = MethodAnalyser::getInstance();
 
         // Throw warnings about incorrect param types
         // PHP wrong argument errors are actually simpler, they show arguments number (starting at 1)
@@ -75,17 +85,23 @@ if (!function_exists('_c')) {
                 }
             }
         }
+        $_ett_paused = false;
     }
 
     // dev only - uses reflection and backtraces
     // idea is to get info to update docblocks / strongly typed params
     function _a(): void
     {
+        global $_ett_paused;
+        if ($_ett_paused) {
+            return;
+        }
         if (CodeUpdater::getInstance()->isUpdatingCode()) {
             return;
         }
-        $logger = Logger::getInstance();
+        $_ett_paused = true;
         $methodAnalyser = MethodAnalyser::getInstance();
+        $logger = Logger::getInstance();
 
         $backRefl = $methodAnalyser->getBacktraceReflection();
         $methodData = $backRefl['methodData'];
@@ -110,7 +126,7 @@ if (!function_exists('_c')) {
             }
             // strongly typed method params are a non-issue since they throw exceptions
             if ($methodData['methodParamTypes'][$paramName] != 'dynamic') {
-                return;
+                continue;
             }
             $docBlockTypeStr = $methodData['docblockParams'][$paramName] ?? '';
             if ($docBlockTypeStr != '') {
@@ -123,7 +139,7 @@ if (!function_exists('_c')) {
             $argType = $methodAnalyser->getArgType($arg);
             // arg matches dockblock type, no need to log
             if ($methodAnalyser->argMatchesDockblockTypeStr($arg, $docBlockTypeStr)) {
-                return;
+                continue;
             }
             $logger->writeLine(implode(',', [
                 $backRefl['callingFile'],
@@ -136,5 +152,6 @@ if (!function_exists('_c')) {
                 $argType
             ]));
         }
+        $_ett_paused = false;
     }
 }

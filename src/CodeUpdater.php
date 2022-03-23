@@ -93,9 +93,9 @@ class CodeUpdater extends Singleton
                         continue;
                     }
                     // these methods are used by _c() so exclude as to not cause infinite loop
-                    if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
-                        continue;
-                    }
+                    // if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
+                    //     continue;
+                    // }
                     $docblockTypeStr = $methodData['docblockParams'][$paramName] ?? 'dynamic';
                     if (strpos($docblockTypeStr, 'mixed') !== false) {
                         continue;
