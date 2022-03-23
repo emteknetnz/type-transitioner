@@ -15,10 +15,17 @@ class CodeUpdater extends Singleton
 
     public function updateCode()
     {
+        $config = Config::getInstance();
+        if (!$config->get(Config::CODE_UPDATE_A) && !$config->get(Config::CODE_UPDATE_C)) {
+            return;
+        }
         $methodAnalyser = MethodAnalyser::getInstance();
         $this->updatingCode = true;
         $this->updateFrameworkConstants();
-        $this->updateBehatTimeout();
+        if ($config->get(Config::CODE_UPDATE_A)) {
+            // writing _a() is dev only, so is behat
+            $this->updateBehatTimeout();
+        }
         
         $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework');;
         if (!file_exists($path)) {
@@ -46,6 +53,10 @@ class CodeUpdater extends Singleton
                 $class = $m[2];
             } else {
                 // echo "Could not find class for path $path\n";
+                continue;
+            }
+            // don't update this, as apply nasty hack to this for behat
+            if ($class == 'TestSessionEnvironment') {
                 continue;
             }
             $fqcn = "$namespace\\$class";
@@ -104,11 +115,13 @@ class CodeUpdater extends Singleton
                     if ($docblockTypeStr != 'dynamic') {
                         $docblockTypeStr = $methodAnalyser->cleanDocblockTypeStr($docblockTypeStr);
                         
-                        $calls[] = "_c('{$docblockTypeStr}', {$paramName}, {$paramNum});";
+                        if ($config->get(Config::CODE_UPDATE_C)) {
+                            $calls[] = "_c('{$docblockTypeStr}', {$paramName}, {$paramNum});";
+                        }
                     }
                     $writeA = true;
                 }
-                if ($writeA) {
+                if ($config->get(Config::CODE_UPDATE_A) && $writeA) {
                     array_unshift($calls, '_a();');
                 }
                 if (empty($calls)) {
@@ -162,11 +175,16 @@ class CodeUpdater extends Singleton
     private function updateBehatTimeout()
     {
         $path = str_replace('//', '/', BASE_PATH . '/vendor/php-webdriver/webdriver/lib/Remote/HttpCommandExecutor.php');
-        if (!file_exists($path)) {
-            return;
+        if (file_exists($path)) {
+            $str = file_get_contents($path);
+            $str = str_replace('30000', '600000', $str);
+            file_put_contents($path, $str);
         }
-        $str = file_get_contents($path);
-        $str = str_replace('30000', '600000', $str);
-        file_put_contents($path, $str);
+        $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/testsession/src/TestSessionEnvironment.php');
+        if (file_exists($path)) {
+            $str = file_get_contents($path);
+            $str = str_replace('$timeout = 10000', '$timeout = 600000', $str);
+            file_put_contents($path, $str);
+        }
     }
 }
