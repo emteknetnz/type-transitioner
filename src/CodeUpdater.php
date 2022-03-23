@@ -18,6 +18,7 @@ class CodeUpdater extends Singleton
         $methodAnalyser = MethodAnalyser::getInstance();
         $this->updatingCode = true;
         $this->updateFrameworkConstants();
+        $this->updateBehatTimeout();
         
         $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework');;
         if (!file_exists($path)) {
@@ -149,5 +150,23 @@ class CodeUpdater extends Singleton
         $functionsPath = str_replace('//', '/', BASE_PATH . '/vendor/emteknetnz/type-transitioner/src/functions.php');
         $newLine = "require_once '{$functionsPath}';";
         file_put_contents($path, str_replace($search, "$newLine\n$search", $contents));
+    }
+
+    /**
+     * Extremely nasty hack to increase the behat curl timeout from 30 seconds to 10 minutes
+     * Because _a() while running behat is EXTREMELY slow.
+     * Often times out after 30 seconds when running in Github Actions CI
+     * 
+     * There's no easy way to update this option so resorting to this instead
+     */
+    private function updateBehatTimeout()
+    {
+        $path = str_replace('//', '/', BASE_PATH . '/vendor/php-webdriver/webdriver/lib/Remote/HttpCommandExecutor.php');
+        if (!file_exists($path)) {
+            return;
+        }
+        $str = file_get_contents($path);
+        $str = str_replace('30000', '600000', $str);
+        file_put_contents($path, $str);
     }
 }
