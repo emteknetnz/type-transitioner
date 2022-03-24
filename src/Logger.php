@@ -6,6 +6,8 @@ class Logger extends Singleton
 {
     private $lines = [];
 
+    private $logFileExists = false;
+
     public function writeLine(string $line): void
     {
         $this->ensureLogFileExists();
@@ -14,29 +16,29 @@ class Logger extends Singleton
             if (empty($existingLogFile)) {
                 // add header if missing
                 $line = $this->getHeaderLine();
-                $key = md5($line);
                 file_put_contents($this->getPath(), $line . "\n");
-                $this->lines[$key] = true;
+                $this->lines[$line] = true;
             } else {
                 // hydrate $this->lines with existing contents of log file
                 foreach (explode("\n", $existingLogFile) as $line) {
-                    $key = md5($line);
-                    $this->lines[$key] = true;
+                    $this->lines[$line] = true;
                 }
             }
         }
         // only write unique lines
-        $key = md5($line);
-        if (array_key_exists($key, $this->lines)) {
+        if (array_key_exists($line, $this->lines)) {
             return;
         }
         $line = trim($line, "\n") . "\n";
         file_put_contents($this->getPath(), $line, FILE_APPEND);
-        $this->lines[$key] = true;
+        $this->lines[$line] = true;
     }
 
     private function ensureLogFileExists(): void
     {
+        if ($this->logFileExists) {
+            return;
+        }
         $path = $this->getPath();
         if (file_exists($path)) {
             return;
@@ -46,6 +48,7 @@ class Logger extends Singleton
             mkdir($dir);
         }
         file_put_contents($path, '');
+        $this->logFileExists = true;
     }
 
     public function clearLogFile(): void

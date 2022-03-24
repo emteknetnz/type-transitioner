@@ -17,6 +17,7 @@ final class Config extends Singleton
         self::TRIGGER_E_USER_DEPRECATED => false,
         self::THROW_TYPE_EXCEPTION => false,
         self::CODE_UPDATE_A => true, // <<<
+        // self::CODE_UPDATE_A => false,
         self::CODE_UPDATE_C => false,
     ];
 

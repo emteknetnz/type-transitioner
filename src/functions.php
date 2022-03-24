@@ -93,6 +93,7 @@ if (!function_exists('_c')) {
     function _a(): void
     {
         global $_ett_paused;
+        global $_ett_backtrace_time, $_ett_log_time;
         if ($_ett_paused) {
             return;
         }
@@ -104,9 +105,11 @@ if (!function_exists('_c')) {
         $logger = Logger::getInstance();
 
         $backRefl = $methodAnalyser->getBacktraceReflection();
+
         $methodData = $backRefl['methodData'];
 
         $paramNames = array_keys($methodData['methodParamTypes']);
+        $lines = [];
         for ($i = 0; $i < count($paramNames); $i++) {
             $paramName = $paramNames[$i];
             $arg = $backRefl['args'][$i] ?? null;
