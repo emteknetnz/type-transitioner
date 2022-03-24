@@ -137,6 +137,12 @@ class CodeUpdater extends Singleton
         // move null to the end of types
         usort($types, fn($a, $b) => $a == 'null' ? 1 : ($b == 'null' ? -1 : 0));
 
+        // TODO: consolodate down classes to common superclasses/interfaces e.g.
+        // A B C
+        // A B D
+        // X Y Z
+        // = B|Z
+
         $newParamType = implode('|', $types);
 
         $contents = file_get_contents($path);
