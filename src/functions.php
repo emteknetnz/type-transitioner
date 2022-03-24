@@ -93,7 +93,6 @@ if (!function_exists('_c')) {
     function _a(): void
     {
         global $_ett_paused;
-        global $_ett_backtrace_time, $_ett_log_time;
         if ($_ett_paused) {
             return;
         }

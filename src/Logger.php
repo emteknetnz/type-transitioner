@@ -8,20 +8,25 @@ class Logger extends Singleton
 
     private $logFileExists = false;
 
+    private $fh = null;
+
     public function writeLine(string $line): void
     {
         $this->ensureLogFileExists();
+        if (!$this->fh) {
+            $this->fh = fopen($this->getPath(), 'a');
+        }
         if (empty($this->lines)) {
             $existingLogFile = file_get_contents($this->getPath());
             if (empty($existingLogFile)) {
                 // add header if missing
-                $line = $this->getHeaderLine();
-                file_put_contents($this->getPath(), $line . "\n");
-                $this->lines[$line] = true;
+                $ln = $this->getHeaderLine();
+                fwrite($this->fh, $ln . "\n");
+                $this->lines[$ln] = true;
             } else {
                 // hydrate $this->lines with existing contents of log file
-                foreach (explode("\n", $existingLogFile) as $line) {
-                    $this->lines[$line] = true;
+                foreach (explode("\n", $existingLogFile) as $ln) {
+                    $this->lines[$ln] = true;
                 }
             }
         }
@@ -29,8 +34,8 @@ class Logger extends Singleton
         if (array_key_exists($line, $this->lines)) {
             return;
         }
-        $line = trim($line, "\n") . "\n";
-        file_put_contents($this->getPath(), $line, FILE_APPEND);
+        $line = trim($line, "\n");
+        fwrite($this->fh, $line . "\n");
         $this->lines[$line] = true;
     }
 
@@ -41,20 +46,15 @@ class Logger extends Singleton
         }
         $path = $this->getPath();
         if (file_exists($path)) {
+            $this->logFileExists = true;
             return;
         }
         $dir = dirname($path);
         if (!file_exists($dir)) {
             mkdir($dir);
         }
-        file_put_contents($path, '');
         $this->logFileExists = true;
-    }
-
-    public function clearLogFile(): void
-    {
-        $this->ensureLogFileExists();
-        file_put_contents($this->getPath(), '');
+        file_put_contents($path, '');
     }
 
     private function getHeaderLine(): string
