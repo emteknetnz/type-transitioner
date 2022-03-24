@@ -133,7 +133,8 @@ class MethodAnalyser extends Singleton implements Flushable
                 return 'array';
                 break;
             case 'object':
-                return get_class($arg);
+                $class = get_class($arg);
+                return $class == 'Closure' ? 'callable' : $class;
                 break;
             case 'resource':
             case 'resource (closed)':
@@ -229,7 +230,13 @@ class MethodAnalyser extends Singleton implements Flushable
         $docBlockTypes = explode('|', $this->cleanDocblockTypeStr($docblockTypeStr));
         foreach ($docBlockTypes as $docBlockType) {
             $lcDocBlockType = strtolower($this->fqcnToShortClassName($docBlockType));
-            if ($lcDocBlockType == 'object' || strtolower($argType) == $lcDocBlockType) {
+            if ($lcDocBlockType == 'object' || $lcArgType == $lcDocBlockType) {
+                return true;
+            }
+            if ($lcDocBlockType == 'closure' && $lcArgType == 'callable') {
+                return true;
+            }
+            if ($lcDocBlockType == 'callable' && $lcArgType == 'closure') {
                 return true;
             }
             if (!$this->typeIsClass($argType)) {
@@ -239,12 +246,11 @@ class MethodAnalyser extends Singleton implements Flushable
             if ($lcArgType == $lcDocblockShortClassName) {
                 return true;
             }
-            $fqcnDocBlockType = $this->shortClassNameToFqcn($docBlockType);
-            if (
-                is_a($argType, $fqcnDocBlockType) ||
-                (class_exists($argType) && array_key_exists($fqcnDocBlockType, class_implements($argType)))
-            ) {
-                return true;
+            $fqcnDocBlockTypes = $this->shortClassNameToFqcns($docBlockType);
+            foreach ($fqcnDocBlockTypes as $fqcnDocBlockType) {
+                if (is_subclass_of($argType, $fqcnDocBlockType)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -271,13 +277,13 @@ class MethodAnalyser extends Singleton implements Flushable
         return !array_key_exists(strtolower($type), $this->nonClassTypes);
     }
 
-    function shortClassNameToFqcn(string $shortClassName): string
+    function shortClassNameToFqcns(string $shortClassName): array
     {
         if ($shortClassName == '' || !$this->typeIsClass($shortClassName)) {
-            return $shortClassName;
+            return [$shortClassName];
         }
         if (strpos($shortClassName, "\\") !== false || strtolower($shortClassName) == 'object') {
-            return $shortClassName;
+            return [$shortClassName];
         }
         if (empty($this->fqcnCache)) {
             $manifest = ClassLoader::inst()->getManifest();
@@ -286,12 +292,13 @@ class MethodAnalyser extends Singleton implements Flushable
                 foreach ($fqcns as $fqcn) {
                     $a = explode("\\", $fqcn);
                     $lcShortClassName = strtolower(array_pop($a));
-                    $this->fqcnCache[$lcShortClassName] = $fqcn;
+                    $this->fqcnCache[$lcShortClassName] ??= [];
+                    $this->fqcnCache[$lcShortClassName][] = $fqcn;
                 }
             }
         }
         $lcShortClassName = strtolower($shortClassName);
-        return $this->fqcnCache[$lcShortClassName] ?? $shortClassName;
+        return $this->fqcnCache[$lcShortClassName] ?? [$shortClassName];
     }
 
     function fqcnToShortClassName(string $fqcn): string

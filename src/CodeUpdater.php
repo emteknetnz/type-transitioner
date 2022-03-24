@@ -13,6 +13,81 @@ class CodeUpdater extends Singleton
         return $this->updatingCode;
     }
 
+    private function getNamespace(string $contents): string
+    {
+        if (preg_match('#\nnamespace (.+?);#', $contents, $m)) {
+            return $m[1];
+        }
+        return '';
+    }
+    // use InvalidArgumentException;
+    // use SilverStripe\Core\Config\Config;
+    // use SilverStripe\Core\Convert;
+    private function getImports(string $contents): array
+    {
+        preg_match_all("#\nuse (.+);\n#", $contents, $m);
+        return $m[1];
+    }
+
+    private function getClass(string $contents): string
+    {
+        if (preg_match('#(\nabstract |\n)class (.+?)[ \n]#', $contents, $m)) {
+            return $m[2];
+        }
+        return '';
+    }
+
+    public function updateDocblock()
+    {
+        $calledClass = 'SilverStripe\Forms\LiteralField';
+        $filename = BASE_PATH . '/vendor/silverstripe/framework/src/Forms/LiteralField.php'; // need lookup to find
+        $calledMethod = '__construct';
+        $paramName = '$content';
+        $oldParamType = 'string|FormField';
+        $newParamType = 'SilverStripe\ORM\FieldType\DBHTMLText|null'; // add use statement
+        $newImports = [
+            'SilverStripe\ORM\FieldType\DBHTMLText'
+        ];
+        $newParamType = 'DBHTMLText|null';
+        
+        $contents = file_get_contents($filename);
+        preg_match("#(?s)/\*\*.+?\*/\n[^\n]+function $calledMethod#", $contents, $m);
+        $oldBlock = $m[0];
+        $newBlock = preg_replace(
+            sprintf(
+                "#\*[ \t]+@param[ \t]+%s[ \t]+%s#",
+                str_replace(['|', '$'], ['\\|', '\\$'], $oldParamType),
+                str_replace('$', '\\$', $paramName)
+            ),
+            "* @param {$newParamType} {$paramName}",
+            $oldBlock
+        );
+        $contents = str_replace($oldBlock, $newBlock, $contents);
+
+        // update use statements
+        $namespace = $this->getNamespace($contents);
+        $imports = $this->getImports($contents);
+        $addImports = [];
+        foreach ($newImports as $newImport) {
+            // is new import already in the namespace
+            if (preg_match("#^{$namespace}\\[a-zA-Z0-9_]+$#", $newImport)) {
+                continue;
+            }
+            // is the new import already imported?
+            if (in_array($newImport, $imports)) {
+                continue;
+            }
+            $addImports[] = 'use ' . $newImport . ';';
+        }
+        if (!empty($addImports)) {
+            $match = $namespace ? "namespace $namespace;" : '<?php';
+            $contents = str_replace("$match\n\n", "$match\n\n" . implode("\n", $addImports) . "\n", $contents);
+        }
+
+        echo $contents;
+        die;
+    }
+
     public function updateCode()
     {
         $config = Config::getInstance();
@@ -44,14 +119,9 @@ class CodeUpdater extends Singleton
             if (strpos($contents, ' _a(') !== false) {
                 continue;
             }
-            $namespace = '';
-            if (preg_match('#\nnamespace (.+?);#', $contents, $m)) {
-                $namespace = $m[1];
-            }
-            $class = '';
-            if (preg_match('#(\nabstract |\n)class (.+?)[ \n]#', $contents, $m)) {
-                $class = $m[2];
-            } else {
+            $namespace = $this->getNamespace($contents);
+            $class = $this->getClass($contents);
+            if (!$class) {
                 // echo "Could not find class for path $path\n";
                 continue;
             }

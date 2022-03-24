@@ -9,7 +9,7 @@ class Reporter
 {
     function report()
     {
-        $dir = BASE_PATH . '/artifacts/combined';
+        $dir = BASE_PATH . '/ett-combined';
         $combined = false;
         $lines = [];
         if (file_exists($dir)) {
@@ -63,6 +63,9 @@ class Reporter
                 continue;
             }
             // see if docblock param matched arg
+            if ($calledMethod == 'setContent' && $paramType == 'string|FormField') {
+                $a=1;
+            }
             if (MethodAnalyser::getInstance()->argTypeMatchesDockblockTypeStr($argType, $paramType)) {
                 continue;
             }
@@ -136,7 +139,9 @@ class Reporter
 
         // manually check these calls and update docblocks, then generate new _c() calls
         // probably do as seperate PRs to automatic generation above
-        print_r($classMethodsWrongDocblocksExOnlyNull);
+        // print_r($classMethodsWrongDocblocksExOnlyNull);
+
+        CodeUpdater::getInstance()->updateDocblock();
 
         // print_r($printrArr);die;
         die;
