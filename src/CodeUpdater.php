@@ -45,10 +45,19 @@ class CodeUpdater extends Singleton
         $paramName = '$content';
         $oldParamType = 'string|FormField';
         $newParamType = 'SilverStripe\ORM\FieldType\DBHTMLText|null'; // add use statement
-        $newImports = [
-            'SilverStripe\ORM\FieldType\DBHTMLText'
-        ];
-        $newParamType = 'DBHTMLText|null';
+        $newImports = [];
+        $types = [];
+        foreach (explode('|', $newParamType) as $type) {
+            if (strpos($type, '\\') === false) {
+                $types[] = $type;
+            } else {
+                // change fqcn to short class name and import namespace;
+                preg_match('#^(.+)\\\\([^\\\\]+)$#', $type, $m);
+                $newImports[] = $type;
+                $types[] = $m[2];
+            }
+        }
+        $newParamType = implode('|', $types);
         
         $contents = file_get_contents($filename);
         preg_match("#(?s)/\*\*.+?\*/\n[^\n]+function $calledMethod#", $contents, $m);
