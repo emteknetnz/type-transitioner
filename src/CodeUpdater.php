@@ -37,14 +37,49 @@ class CodeUpdater extends Singleton
         return '';
     }
 
-    public function updateDocblock()
+    private function getAbsPathForClass(string $class): string
     {
-        $calledClass = 'SilverStripe\Forms\LiteralField';
-        $filename = BASE_PATH . '/vendor/silverstripe/framework/src/Forms/LiteralField.php'; // need lookup to find
-        $calledMethod = '__construct';
-        $paramName = '$content';
-        $oldParamType = 'string|FormField';
-        $newParamType = 'SilverStripe\ORM\FieldType\DBHTMLText|null'; // add use statement
+        $a = explode('\\', $class);
+        $shortClassName = array_pop($a);
+        $namespace = implode('\\', $a);
+        $path = $this->absPath('vendor/silverstripe');
+        $res = shell_exec("find {$path} | grep /{$shortClassName}.php");
+        $arr = explode("\n", $res);
+        $arr = array_filter($arr);
+        if (count($arr) == 0) {
+            return '';
+        }
+        if (count($arr) == 1) {
+            return $arr[0];
+        }
+        foreach ($arr as $path) {
+            $contents = file_get_contents($path);
+            if (strpos($contents, "namespace $namespace;") !== false) {
+                return $path;
+            }
+        }
+        return '';
+    }
+
+    private function absPath(string $relPath)
+    {
+        return str_replace(['///', '//'], '/', BASE_PATH . '/' . $relPath);
+    }
+
+    public function updateDocblock(
+        string $calledClass,
+        string $calledMethod,
+        string $paramName,
+        string $paramType, // aka docblockStr
+        array $argTypes
+    ) {
+        $path = $this->getAbsPathForClass($calledClass);
+        if (!$path) {
+            echo "Did not find path for $calledClass";die;
+        }
+        $oldParamType = $paramType;
+        $oldParamTypes = explode('|', $oldParamType);
+        $newParamType = implode('|', $argTypes);
         $newImports = [];
         $types = [];
         foreach (explode('|', $newParamType) as $type) {
@@ -57,9 +92,54 @@ class CodeUpdater extends Singleton
                 $types[] = $m[2];
             }
         }
+        // predefined interfaces
+        // some docblocks have SomeClass|ArrayAccess type of docblock type
+        // this module won't detect a interface as an argument type, so add the, into the mix
+        $interfaces = [
+            'Traversable',
+            'Iterator',
+            'IteratorAggregate',
+            'Throwable',
+            'ArrayAccess',
+            'Serializable',
+            'Stringable',
+            'UnitEnum',
+            'BackedEnum',
+        ];
+        foreach ($interfaces as $interface) {
+            if (in_array($interface, $oldParamTypes)) {
+                if (!in_array($interface, $types)) {
+                    $types[] = $interface;
+                }
+            }
+        }
+        // consolodate types
+        $newTypes = [];
+        $childTypes = [];
+        foreach ($types as $t1) {
+            foreach ($types as $t2) {
+                if ($t1 == $t2) {
+                    continue;
+                }
+                if (is_subclass_of($t1, $t2)) {
+                    $childTypes[] = $t1;
+                }
+                if (is_subclass_of($t2, $t1)) {
+                    $childTypes[] = $t2;
+                }
+            }
+        }
+        foreach ($types as $type) {
+            if (!in_array($type, $childTypes)) {
+                $newTypes[] = $type;
+            }
+        }
+        // move null to the end of types
+        usort($types, fn($a, $b) => $a == 'null' ? 1 : ($b == 'null' ? -1 : 0));
+
         $newParamType = implode('|', $types);
-        
-        $contents = file_get_contents($filename);
+
+        $contents = file_get_contents($path);
         preg_match("#(?s)/\*\*.+?\*/\n[^\n]+function $calledMethod#", $contents, $m);
         $oldBlock = $m[0];
         $newBlock = preg_replace(
@@ -86,15 +166,18 @@ class CodeUpdater extends Singleton
             if (in_array($newImport, $imports)) {
                 continue;
             }
-            $addImports[] = 'use ' . $newImport . ';';
+            $importStr = 'use ' . $newImport . ';';
+            if (strpos($contents, $importStr) === false) {
+                $addImports[] = $importStr;
+            }
         }
         if (!empty($addImports)) {
             $match = $namespace ? "namespace $namespace;" : '<?php';
             $contents = str_replace("$match\n\n", "$match\n\n" . implode("\n", $addImports) . "\n", $contents);
         }
 
-        echo $contents;
-        die;
+        file_put_contents($path, $contents);
+        echo "Update docblock params for $calledClass::$calledMethod\n";
     }
 
     public function updateCode()
@@ -110,8 +193,8 @@ class CodeUpdater extends Singleton
             // writing _a() is dev only, so is behat
             $this->updateBehatTimeout();
         }
-        
-        $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework');;
+
+        $path = $this->absPath('vendor/silverstripe/framework');
         if (!file_exists($path)) {
             // Running CI on framework module
             $path = str_replace('//', '/', BASE_PATH);
@@ -193,7 +276,7 @@ class CodeUpdater extends Singleton
                     }
                     if ($docblockTypeStr != 'dynamic') {
                         $docblockTypeStr = $methodAnalyser->cleanDocblockTypeStr($docblockTypeStr);
-                        
+
                         if ($config->get(Config::CODE_UPDATE_C)) {
                             $calls[] = "_c('{$docblockTypeStr}', {$paramName}, {$paramNum});";
                         }
@@ -223,23 +306,23 @@ class CodeUpdater extends Singleton
 
     // TODO: something more proper
     // ! this is pretty horrid - will make it look like we have fresh changes to git commit in framework
-    // 
+    //
     // need to update framework constants.php, which loads as part of the index.php during
     // require __DIR__ . '/../vendor/autoload.php';
     // i.e. before autoloader has loaded emteknetnz functions.php
     private function updateFrameworkConstants()
     {
-        $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/framework/src/includes/constants.php');
+        $path = $this->absPath('vendor/silverstripe/framework/src/includes/constants.php');
         if (!file_exists($path)) {
             // Running CI on framework module
-            $path = str_replace('//', '/', BASE_PATH . '/src/includes/constants.php');
+            $path = $this->absPath('src/includes/constants.php');
         }
         $contents = file_get_contents($path);
         if (strpos($contents, 'vendor/emteknetnz/type-transitioner') !== false) {
             return;
         }
         $search = "require_once __DIR__ . '/functions.php';";
-        $functionsPath = str_replace('//', '/', BASE_PATH . '/vendor/emteknetnz/type-transitioner/src/functions.php');
+        $functionsPath = $this->absPath('vendor/emteknetnz/type-transitioner/src/functions.php');
         $newLine = "require_once '{$functionsPath}';";
         file_put_contents($path, str_replace($search, "$newLine\n$search", $contents));
     }
@@ -248,18 +331,18 @@ class CodeUpdater extends Singleton
      * Extremely nasty hack to increase the behat curl timeout from 30 seconds to 10 minutes
      * Because _a() while running behat is EXTREMELY slow.
      * Often times out after 30 seconds when running in Github Actions CI
-     * 
+     *
      * There's no easy way to update this option so resorting to this instead
      */
     private function updateBehatTimeout()
     {
-        $path = str_replace('//', '/', BASE_PATH . '/vendor/php-webdriver/webdriver/lib/Remote/HttpCommandExecutor.php');
+        $path = $this->absPath('vendor/php-webdriver/webdriver/lib/Remote/HttpCommandExecutor.php');
         if (file_exists($path)) {
             $str = file_get_contents($path);
             $str = str_replace('30000', '600000', $str);
             file_put_contents($path, $str);
         }
-        $path = str_replace('//', '/', BASE_PATH . '/vendor/silverstripe/testsession/src/TestSessionEnvironment.php');
+        $path = $this->absPath('vendor/silverstripe/testsession/src/TestSessionEnvironment.php');
         if (file_exists($path)) {
             $str = file_get_contents($path);
             $str = str_replace('$timeout = 10000', '$timeout = 600000', $str);

@@ -112,6 +112,8 @@ class Reporter
             }
         }
 
+        $c=0;
+
         $classMethodsWrongDocblocksExOnlyNull = [];
         $a = $classMethodsWrongDocblocks;
         foreach (array_keys($a) as $calledClass) {
@@ -124,6 +126,11 @@ class Reporter
                         }
                         $v = $a[$calledClass][$calledMethod][$paramName];
                         $classMethodsWrongDocblocksExOnlyNull[$calledClass][$calledMethod][$paramName] = $v;
+
+                        $c++;
+                        if ($c < 100) {
+                            CodeUpdater::getInstance()->updateDocblock($calledClass, $calledMethod, $paramName, $paramType, $argTypes);
+                        }
                     }
                 }
             }
@@ -140,8 +147,6 @@ class Reporter
         // manually check these calls and update docblocks, then generate new _c() calls
         // probably do as seperate PRs to automatic generation above
         // print_r($classMethodsWrongDocblocksExOnlyNull);
-
-        CodeUpdater::getInstance()->updateDocblock();
 
         // print_r($printrArr);die;
         die;
