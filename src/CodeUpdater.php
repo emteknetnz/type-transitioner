@@ -2,11 +2,32 @@
 
 namespace emteknetnz\TypeTransitioner;
 
+use stdClass;
+use Exception;
 use ReflectionClass;
+use PhpParser\Error;
+use PhpParser\Lexer;
+use PhpParser\Node\Arg;
+use PhpParser\Node\Expr;
+use PhpParser\Node\Expr\ArrayDimFetch;
+use PhpParser\Node\Expr\ClassConstFetch;
+use PhpParser\Node\Expr\ConstFetch;
+use PhpParser\Node\Expr\FuncCall;
+use PhpParser\Node\Expr\MethodCall;
+use PhpParser\Node\Expr\PropertyFetch;
+use PhpParser\Node\Expr\StaticCall;
+use PhpParser\Node\Expr\Variable;
+use PhpParser\ParserFactory;
+use PhpParser\Node\Stmt\Class_;
+use PhpParser\Node\Stmt\ClassMethod;
+use PhpParser\Node\Stmt\If_;
+use PhpParser\Node\Stmt\Namespace_;
 
 class CodeUpdater extends Singleton
 {
     private $updatingCode = false;
+
+    private $hasUpdatedCode = false;
 
     public function isUpdatingCode(): bool
     {
@@ -188,6 +209,9 @@ class CodeUpdater extends Singleton
 
     public function updateCode()
     {
+        if ($this->hasUpdatedCode) {
+            return;
+        }
         $config = Config::getInstance();
         if (!$config->get(Config::CODE_UPDATE_A) && !$config->get(Config::CODE_UPDATE_C)) {
             return;
@@ -199,7 +223,6 @@ class CodeUpdater extends Singleton
             // writing _a() is dev only, so is behat
             $this->updateBehatTimeout();
         }
-
         $path = $this->absPath('vendor/silverstripe/framework');
         if (!file_exists($path)) {
             // Running CI on framework module
@@ -228,11 +251,12 @@ class CodeUpdater extends Singleton
                 continue;
             }
             $fqcn = "$namespace\\$class";
-            // sometimes the class won't exist, for instance if there's a if (!class_exists(<other_class>)) return; style check within the file
-            if (!class_exists($fqcn)) {
+            try {
+                $reflClass = new ReflectionClass($fqcn);
+            } catch (Exception $e) {
+                // sometimes the class won't exist, for instance if there's a if (!class_exists(<other_class>)) return; style check within the file
                 continue;
             }
-            $reflClass = new ReflectionClass($fqcn);
             $methodDataArr = [];
             foreach ($reflClass->getMethods() as $reflMethod) {
                 $name = $reflMethod->getName();
@@ -296,7 +320,7 @@ class CodeUpdater extends Singleton
                 if ($config->get(Config::CODE_UPDATE_A) && $writeA) {
                     array_unshift($calls, '_a();');
                 }
-                if (empty($calls)) {
+                if (!empty($calls)) {
                     continue;
                 }
                 preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
@@ -306,12 +330,142 @@ class CodeUpdater extends Singleton
                 $contents = str_replace($fncontents, $newfncontents, $contents);
                 $changed = true;
             }
+            if ($config->get(Config::CODE_UPDATE_R)) {
+                $oldContents = $contents;
+                $contents = $this->rewriteReturnStatements($contents);
+                if ($oldContents != $contents) {
+                    $changed = true;
+                }
+            }
             if (!$changed) {
                 continue;
             }
             file_put_contents($path, $contents);
             $this->updatingCode = false;
+            $this->hasUpdatedCode = true;
         }
+    }
+
+    private function rewriteReturnStatements(string $code): string
+    {
+        $ast = $this->getAst($code);
+        $classes = $this->getClasses($ast);
+        if (empty($classes)) {
+            $classes = ['nonclass'];
+        }
+        // reverse methods so 'updating from the bottom' so that character offests remain correct
+        $classes = array_reverse($classes);
+        foreach ($classes as $class) {
+            if ($class == 'nonclass') {
+                $methods = ['nonclass'];
+            } else {
+                $methods = $this->getMethods($class);
+            }
+            $methods = array_reverse($methods);
+            foreach ($methods as $method) {
+                if ($method == 'nonclass') {
+                    $returnStatements = $this->getReturnStatements($ast);
+                } else {
+                    $returnStatements = $this->getReturnStatements($method);
+                }
+                $returnStatements = array_reverse($returnStatements);
+                foreach ($returnStatements as $returnStatement) {
+                    $code = implode('', [
+                        substr($code, 0, $returnStatement->getEndFilePos() + 1),
+                        '_r(',
+                        substr($code, $returnStatement->getEndFilePos() + 1),
+                        ')',
+                    ]);
+                }
+            }
+        }
+        return $code;
+    }
+
+    private function recursiveAddReturnStatements($thingy, array &$returnStatements): void
+    {
+        $things = is_array($thingy) ? $thingy : [$thingy];
+        foreach ($things as $thing) {
+            if ($thing instanceof FuncCall) {
+                $returnStatements[] = $thing;
+                foreach ($thing->args ?? [] as $arg) {
+                    $this->recursiveAddReturnStatements($arg, $returnStatements);
+                }
+            }
+            if (is_object($thing)) {
+                foreach (['expr', 'stmts', 'cond', 'else', 'elseifs', 'left', 'right', 'value', 'args', 'items', 'cases'] as $property) {
+                    if (property_exists($thing, $property) && !is_null($thing->{$property})) {
+                        if (is_array($thing->{$property})) {
+                            foreach ($thing->{$property} as $thang) {
+                                $this->recursiveAddReturnStatements($thang, $returnStatements);
+                            }
+                        } else {
+                            $this->recursiveAddReturnStatements($thing->{$property}, $returnStatements);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private function getReturnStatements($thing): array
+    {
+        $returnStatements = [];
+        if (is_array($thing)) {
+            // passing in an ast for a nonclass file
+            $newThing = new stdClass();
+            $newThing->stmts = $thing;
+            $thing = $newThing;
+        }
+        foreach ($thing->stmts ?? [] as $stmts) {
+            $this->recursiveAddReturnStatements($stmts, $returnStatements);
+        }
+        return $returnStatements;
+    }
+
+    private function getAst(string $code): array
+    {
+        $lexer = new Lexer([
+            'usedAttributes' => [
+                'comments',
+                'startLine',
+                'endLine',
+                //'startTokenPos',
+                //'endTokenPos',
+                'startFilePos',
+                'endFilePos'
+            ]
+        ]);
+        $parser = (new ParserFactory)->create(ParserFactory::PREFER_PHP7, $lexer);
+        try {
+            $ast = $parser->parse($code);
+        } catch (Error $error) {
+            echo "Parse error: {$error->getMessage()}\n";
+            die;
+        }
+        return $ast;
+    }
+
+    private function getClasses(array $ast): array
+    {
+        $ret = [];
+        $a = ($ast[0] ?? null) instanceof Namespace_ ? $ast[0]->stmts : $ast;
+        $ret = array_merge($ret, array_filter($a, fn($v) => $v instanceof Class_));
+        // SapphireTest and other file with dual classes
+        $i = array_filter($a, fn($v) => $v instanceof If_);
+        foreach ($i as $if) {
+            foreach ($if->stmts ?? [] as $v) {
+                if ($v instanceof Class_) {
+                    $ret[] = $v;
+                }
+            }
+        }
+        return $ret;
+    }
+
+    private function getMethods(Class_ $class): array
+    {
+        return array_filter($class->stmts, fn($v) => $v instanceof ClassMethod);
     }
 
     // TODO: something more proper

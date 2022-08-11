@@ -11,7 +11,7 @@ class Singleton
     {
     }
 
-    // portected clone method to prevent cloning
+    // protected clone method to prevent cloning
     protected function __clone()
     {
     }
@@ -23,7 +23,7 @@ class Singleton
 
     /**
      * static return type not supported until php 8.0
-     * 
+     *
      * @return static The singleton instance
      */
     #[\ReturnTypeWillChange]

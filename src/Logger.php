@@ -67,7 +67,8 @@ class Logger extends Singleton
             'paramName',
             'paramWhere',
             'paramType',
-            'argType'
+            'argType',
+            'returnType'
         ]);
     }
 

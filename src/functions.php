@@ -14,6 +14,108 @@ if (!function_exists('_c')) {
     global $_ett_paused;
     $_ett_paused = false;
 
+    // argument()
+    // collect trace info used to update docblocks / strongly typed params
+    function _a(): void
+    {
+        global $_ett_paused;
+        if ($_ett_paused) {
+            return;
+        }
+        if (CodeUpdater::getInstance()->isUpdatingCode()) {
+            return;
+        }
+        $_ett_paused = true;
+        $methodAnalyser = MethodAnalyser::getInstance();
+        $logger = Logger::getInstance();
+
+        $backRefl = $methodAnalyser->getBacktraceReflection();
+
+        $methodData = $backRefl['methodData'];
+
+        $paramNames = array_keys($methodData['methodParamTypes']);
+        for ($i = 0; $i < count($paramNames); $i++) {
+            $paramName = $paramNames[$i];
+            $arg = $backRefl['args'][$i] ?? null;
+            $flags = $methodData['methodParamFlags'][$paramName];
+            // null optional args are a non issue, will use default which assumed to always be valid
+            if (is_null($arg) && ($flags & MethodAnalyser::ETT_OPTIONAL) == MethodAnalyser::ETT_OPTIONAL) {
+                continue;
+            }
+            // null by reference arguments can start life as undefined and become a return var
+            // of sorts e.g. $m in preg_match($rx, $subject, $m);
+            if (is_null($arg) && ($flags & MethodAnalyser::ETT_REFERENCE) == MethodAnalyser::ETT_REFERENCE) {
+                continue;
+            }
+            // variadic args are always a mixed array, no need to validate
+            if (($flags & MethodAnalyser::ETT_VARIADIC) == MethodAnalyser::ETT_VARIADIC) {
+                continue;
+            }
+            // strongly typed method params are a non-issue since they throw exceptions
+            if ($methodData['methodParamTypes'][$paramName] != 'dynamic') {
+                continue;
+            }
+            $docBlockTypeStr = $methodData['docblockParams'][$paramName] ?? '';
+            if ($docBlockTypeStr != '') {
+                $paramType = $docBlockTypeStr;
+                $paramWhere = 'docblock';
+            } else {
+                $paramType = 'dynamic';
+                $paramWhere = 'undocumented';
+            }
+            $argType = $methodAnalyser->getArgType($arg);
+            // arg matches dockblock type, no need to log
+            // if ($methodAnalyser->argMatchesDockblockTypeStr($arg, $docBlockTypeStr)) {
+            //     continue;
+            // }
+            $logger->writeLine(implode(',', [
+                $backRefl['callingFile'],
+                $backRefl['callingLine'],
+                $backRefl['calledClass'],
+                $backRefl['calledMethod'],
+                $paramName,
+                $paramWhere,
+                $paramType,
+                $argType,
+                ''
+            ]));
+        }
+        $_ett_paused = false;
+    }
+
+    // return()
+    // collect trace info used to update docblocks / strongly typed params
+    function _r($returnValue)
+    {
+        global $_ett_paused;
+        if ($_ett_paused) {
+            return;
+        }
+        if (CodeUpdater::getInstance()->isUpdatingCode()) {
+            return;
+        }
+        $methodAnalyser = MethodAnalyser::getInstance();
+        $logger = Logger::getInstance();
+        $backRefl = $methodAnalyser->getBacktraceReflection();
+        $returnType = $methodAnalyser->getArgType($returnValue);
+        $logger->writeLine(implode(',', [
+            $backRefl['callingFile'],
+            $backRefl['callingLine'],
+            $backRefl['calledClass'],
+            $backRefl['calledMethod'],
+            '',
+            '',
+            '',
+            '',
+            $returnType
+        ]));
+        $_ett_paused = true;
+        $_ett_paused = false;
+    }
+
+    // cast()
+    // idea was to cast params to a particular type for PHP 8.1 support
+    // this idea is no longer relevant
     function _c(string $docBlockTypeStr, &$arg, int $paramNum): void
     {
         global $_ett_paused;
@@ -35,7 +137,7 @@ if (!function_exists('_c')) {
         ];
         $docBlockTypes = explode('|', $docBlockTypeStr);
 
-        // cast to the first casttype found e.g string|int will cast null to (string) '' 
+        // cast to the first casttype found e.g string|int will cast null to (string) ''
         if ($config->get(Config::CAST_NULL) && is_null($arg) && !in_array('null', $docBlockTypes)) {
             foreach ($docBlockTypes as $docBlockType) {
                 // can only cast to a non-object type
@@ -84,75 +186,6 @@ if (!function_exists('_c')) {
                     ));
                 }
             }
-        }
-        $_ett_paused = false;
-    }
-
-    // dev only - uses reflection and backtraces
-    // idea is to get info to update docblocks / strongly typed params
-    function _a(): void
-    {
-        global $_ett_paused;
-        if ($_ett_paused) {
-            return;
-        }
-        if (CodeUpdater::getInstance()->isUpdatingCode()) {
-            return;
-        }
-        $_ett_paused = true;
-        $methodAnalyser = MethodAnalyser::getInstance();
-        $logger = Logger::getInstance();
-
-        $backRefl = $methodAnalyser->getBacktraceReflection();
-
-        $methodData = $backRefl['methodData'];
-
-        $paramNames = array_keys($methodData['methodParamTypes']);
-        $lines = [];
-        for ($i = 0; $i < count($paramNames); $i++) {
-            $paramName = $paramNames[$i];
-            $arg = $backRefl['args'][$i] ?? null;
-            $flags = $methodData['methodParamFlags'][$paramName];
-            // null optional args are a non issue, will use default which assumed to always be valid
-            if (is_null($arg) && ($flags & MethodAnalyser::ETT_OPTIONAL) == MethodAnalyser::ETT_OPTIONAL) {
-                continue;
-            }
-            // null by reference arguments can start life as undefined and become a return var
-            // of sorts e.g. $m in preg_match($rx, $subject, $m);
-            if (is_null($arg) && ($flags & MethodAnalyser::ETT_REFERENCE) == MethodAnalyser::ETT_REFERENCE) {
-                continue;
-            }
-            // variadic args are always a mixed array, no need to validate
-            if (($flags & MethodAnalyser::ETT_VARIADIC) == MethodAnalyser::ETT_VARIADIC) {
-                continue;
-            }
-            // strongly typed method params are a non-issue since they throw exceptions
-            if ($methodData['methodParamTypes'][$paramName] != 'dynamic') {
-                continue;
-            }
-            $docBlockTypeStr = $methodData['docblockParams'][$paramName] ?? '';
-            if ($docBlockTypeStr != '') {
-                $paramType = $docBlockTypeStr;
-                $paramWhere = 'docblock';
-            } else {
-                $paramType = 'dynamic';
-                $paramWhere = 'undocumented';
-            }
-            $argType = $methodAnalyser->getArgType($arg);
-            // arg matches dockblock type, no need to log
-            if ($methodAnalyser->argMatchesDockblockTypeStr($arg, $docBlockTypeStr)) {
-                continue;
-            }
-            $logger->writeLine(implode(',', [
-                $backRefl['callingFile'],
-                $backRefl['callingLine'],
-                $backRefl['calledClass'],
-                $backRefl['calledMethod'],
-                $paramName,
-                $paramWhere,
-                $paramType,
-                $argType
-            ]));
         }
         $_ett_paused = false;
     }
