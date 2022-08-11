@@ -17,6 +17,7 @@ use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\PropertyFetch;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\Stmt\Return_;
 use PhpParser\ParserFactory;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassMethod;
@@ -370,23 +371,38 @@ class CodeUpdater extends Singleton
                 }
                 $returnStatements = array_reverse($returnStatements);
                 foreach ($returnStatements as $returnStatement) {
+                    $start = $returnStatement->getStartFilePos();
+                    $end = $returnStatement->getEndFilePos();
+                    // already wrapped in an _r() function
+                    if (substr($code, $start - 3, 3) == '_r(') {
+                        continue;
+                    }
+                    if (substr($code, $start + 7, $end - $start - 7) == 'return;') {
+                        continue;
+                    }
                     $code = implode('', [
-                        substr($code, 0, $returnStatement->getEndFilePos() + 1),
+                        substr($code, 0, $start),
                         '_r(',
-                        substr($code, $returnStatement->getEndFilePos() + 1),
+                        substr($code, $start, $end - $start),
                         ')',
+                        substr($code, $end),
                     ]);
+                    #var_dump($code);
+                    // only do one return statement at a time otherwise things will break when
+                    // returning a multiline function that will usually have a nested return statement
+                    break;
                 }
             }
         }
-        return $code;
+        // keep calling this function until all return statements are wrapped in _r()
+        return $this->rewriteReturnStatements($code);
     }
 
     private function recursiveAddReturnStatements($thingy, array &$returnStatements): void
     {
         $things = is_array($thingy) ? $thingy : [$thingy];
         foreach ($things as $thing) {
-            if ($thing instanceof FuncCall) {
+            if ($thing instanceof Return_) {
                 $returnStatements[] = $thing;
                 foreach ($thing->args ?? [] as $arg) {
                     $this->recursiveAddReturnStatements($arg, $returnStatements);
