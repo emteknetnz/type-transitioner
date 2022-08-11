@@ -30,6 +30,8 @@ class CodeUpdater extends Singleton
 
     private $hasUpdatedCode = false;
 
+    private $hasDetectedIfUpdatedCode = false;
+
     public function isUpdatingCode(): bool
     {
         return $this->updatingCode;
@@ -212,6 +214,14 @@ class CodeUpdater extends Singleton
     {
         if ($this->hasUpdatedCode) {
             return;
+        }
+        if (!$this->hasDetectedIfUpdatedCode) {
+            $this->hasDetectedIfUpdatedCode = true;
+            $s = file_get_contents('vendor/silverstripe/framework/src/Control/ContentNegotiator.php');
+            if (strpos($s, 'return _r(') !== false) {
+                $this->hasUpdatedCode = true;
+                return;
+            }
         }
         $config = Config::getInstance();
         if (!$config->get(Config::CODE_UPDATE_A) && !$config->get(Config::CODE_UPDATE_C)) {

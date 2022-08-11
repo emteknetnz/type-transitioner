@@ -8,6 +8,8 @@ use ReflectionParameter;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Core\Manifest\ClassLoader;
 use Psr\SimpleCache\CacheInterface;
+use Reflection;
+use ReflectionException;
 use SilverStripe\Core\Flushable;
 use SilverStripe\Core\Injector\InjectorLoader;
 
@@ -200,8 +202,12 @@ class MethodAnalyser extends Singleton implements Flushable
                 $methodData = $cache->get($key);
             } else {
                 $reflClass = new ReflectionClass($calledClass);
-                $reflMethod = $reflClass->getMethod($calledMethod);
-                $methodData = $this->getMethodData($reflClass, $reflMethod);
+                try {
+                    $reflMethod = $reflClass->getMethod($calledMethod);
+                    $methodData = $this->getMethodData($reflClass, $reflMethod);
+                } catch (ReflectionException $e) {
+                    $methodData = null;
+                }
                 if ($cache) {
                     $cache->set($key, $methodData);
                 }

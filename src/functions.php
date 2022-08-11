@@ -89,14 +89,15 @@ if (!function_exists('_c')) {
     {
         global $_ett_paused;
         if ($_ett_paused) {
-            return;
+            return $returnValue;
         }
         if (CodeUpdater::getInstance()->isUpdatingCode()) {
-            return;
+            return $returnValue;
         }
+        $_ett_paused = true;
         $methodAnalyser = MethodAnalyser::getInstance();
         $logger = Logger::getInstance();
-        $backRefl = $methodAnalyser->getBacktraceReflection();
+        $backRefl = $methodAnalyser->getBacktraceReflection(); // << infinite loop
         $returnType = $methodAnalyser->getArgType($returnValue);
         $logger->writeLine(implode(',', [
             $backRefl['callingFile'],
@@ -109,7 +110,6 @@ if (!function_exists('_c')) {
             '',
             $returnType
         ]));
-        $_ett_paused = true;
         $_ett_paused = false;
         return $returnValue;
     }
