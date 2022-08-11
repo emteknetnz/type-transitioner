@@ -344,6 +344,11 @@ class CodeUpdater extends Singleton
             if ($config->get(Config::CODE_UPDATE_R)) {
                 $oldContents = $contents;
                 $contents = $this->rewriteReturnStatements($contents, $path);
+                // hardcoded fix to a strange ref method
+                // protected function &nestedValueRef($name, &$source)
+                if (strpos($path, 'silverstripe/framework/src/Control/Session.php') !== false) {
+                    $contents = str_replace('return _r($var);', '_r($var);return $var;', $contents);
+                }
                 if ($oldContents != $contents) {
                     $changed = true;
                 }
