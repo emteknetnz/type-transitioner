@@ -72,8 +72,14 @@ class Logger extends Singleton
         ]);
     }
 
+    private string $time = '';
+
     private function getPath(): string
     {
-        return str_replace('//', '/', BASE_PATH . '/artifacts/ett.txt');
+        if (!$this->time) {
+            $this->time = time();
+        }
+        $time = $this->time;
+        return str_replace('//', '/', BASE_PATH . "/artifacts/ett-combined/ett-$time.txt");
     }
 }

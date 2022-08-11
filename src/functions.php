@@ -97,7 +97,7 @@ if (!function_exists('_c')) {
         $_ett_paused = true;
         $methodAnalyser = MethodAnalyser::getInstance();
         $logger = Logger::getInstance();
-        $backRefl = $methodAnalyser->getBacktraceReflection(); // << infinite loop
+        $backRefl = $methodAnalyser->getBacktraceReflection();
         $returnType = $methodAnalyser->getArgType($returnValue);
         $logger->writeLine(implode(',', [
             $backRefl['callingFile'],
