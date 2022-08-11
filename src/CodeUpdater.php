@@ -321,7 +321,7 @@ class CodeUpdater extends Singleton
                 if ($config->get(Config::CODE_UPDATE_A) && $writeA) {
                     array_unshift($calls, '_a();');
                 }
-                if (!empty($calls)) {
+                if (empty($calls)) {
                     continue;
                 }
                 preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);

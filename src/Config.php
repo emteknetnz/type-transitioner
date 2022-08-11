@@ -9,7 +9,7 @@ final class Config extends Singleton
     public const CAST_NULL = 'CAST_NULL';
     public const TRIGGER_E_USER_DEPRECATED = 'TRIGGER_E_USER_DEPRECATED';
     public const THROW_TYPE_EXCEPTION = 'THROW_TYPE_EXCEPTION';
-    public const CODE_UPDATE_A = 'CODE_WRITE_A';
+    public const CODE_UPDATE_A = 'CODE_UPDATE_A';
     public const CODE_UPDATE_C = 'CODE_UPDATE_C';
     public const CODE_UPDATE_R = 'CODE_UPDATE_R';
 
