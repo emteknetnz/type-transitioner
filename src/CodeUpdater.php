@@ -228,6 +228,10 @@ class CodeUpdater extends Singleton
                 continue;
             }
             $fqcn = "$namespace\\$class";
+            // sometimes the class won't exist, for instance if there's a if (!class_exists(<other_class>)) return; style check within the file
+            if (!class_exists($fqcn)) {
+                continue;
+            }
             $reflClass = new ReflectionClass($fqcn);
             $methodDataArr = [];
             foreach ($reflClass->getMethods() as $reflMethod) {
