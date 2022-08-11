@@ -333,7 +333,7 @@ class CodeUpdater extends Singleton
             }
             if ($config->get(Config::CODE_UPDATE_R)) {
                 $oldContents = $contents;
-                $contents = $this->rewriteReturnStatements($contents);
+                $contents = $this->rewriteReturnStatements($contents, $path);
                 if ($oldContents != $contents) {
                     $changed = true;
                 }
@@ -341,14 +341,46 @@ class CodeUpdater extends Singleton
             if (!$changed) {
                 continue;
             }
+            echo "Code wrote for $path\n";
             file_put_contents($path, $contents);
             $this->updatingCode = false;
             $this->hasUpdatedCode = true;
         }
     }
 
-    private function rewriteReturnStatements(string $code): string
+    private $prevent_loop = [];
+
+    private function rewriteReturnStatements(string $code, string $path): string
     {
+        // skip SapphireTest because the hackish dual class support seems to confuse the parser
+        if (strpos($path, '/SapphireTest.php') !== false) {
+            return $code;
+        }
+        if (strpos($path, '/FunctionalTest.php') !== false) {
+            return $code;
+        }
+        if (strpos($path, '/SSListContains.php') !== false) {
+            return $code;
+        }
+        if (strpos($path, '/ViewableDataContains.php') !== false) {
+            return $code;
+        }
+        if (strpos($path, '/SSListContainsOnlyMatchingItems.php') !== false) {
+            return $code;
+        }
+
+        if (!isset($this->prevent_loop[$path])) {
+            $this->prevent_loop[$path] = 0;
+        }
+        if ($this->prevent_loop[$path]++ > 250) {
+            return $code;
+        }
+        $origCode = $code;
+        // clean up code
+        $code = str_replace('return(', 'return (', $code);
+        //
+        echo 'Rewriting return statements for ' . $path . ' - ' . $this->prevent_loop[$path] . "\n";
+        file_put_contents(BASE_PATH . '/debug.txt', $code);
         $ast = $this->getAst($code);
         $classes = $this->getClasses($ast);
         if (empty($classes)) {
@@ -373,21 +405,21 @@ class CodeUpdater extends Singleton
                 foreach ($returnStatements as $returnStatement) {
                     $start = $returnStatement->getStartFilePos();
                     $end = $returnStatement->getEndFilePos();
-                    // already wrapped in an _r() function
-                    if (substr($code, $start - 3, 3) == '_r(') {
+                    // statement already has an _r() function
+                    if (substr($code, $start + 7, 3) == '_r(') {
                         continue;
                     }
-                    if (substr($code, $start + 7, $end - $start - 7) == 'return;') {
+                    // no return value
+                    if (substr($code, $start, 7) == 'return;') {
                         continue;
                     }
                     $code = implode('', [
                         substr($code, 0, $start),
-                        '_r(',
-                        substr($code, $start, $end - $start),
+                        'return _r(',
+                        substr($code, $start + 7, $end - $start - 7),
                         ')',
                         substr($code, $end),
                     ]);
-                    #var_dump($code);
                     // only do one return statement at a time otherwise things will break when
                     // returning a multiline function that will usually have a nested return statement
                     break;
@@ -395,7 +427,10 @@ class CodeUpdater extends Singleton
             }
         }
         // keep calling this function until all return statements are wrapped in _r()
-        return $this->rewriteReturnStatements($code);
+        if ($origCode == $code) {
+            return $code;
+        }
+        return $this->rewriteReturnStatements($code, $path);
     }
 
     private function recursiveAddReturnStatements($thingy, array &$returnStatements): void

@@ -111,6 +111,7 @@ if (!function_exists('_c')) {
         ]));
         $_ett_paused = true;
         $_ett_paused = false;
+        return $returnValue;
     }
 
     // cast()
