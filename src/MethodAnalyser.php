@@ -196,27 +196,46 @@ class MethodAnalyser extends Singleton implements Flushable
         // $callType = $d[2]['type'] ?? '';
         $calledMethod = $d[2]['function'] ?? '';
         $args = $d[2]['args'] ?? [];
-        $key = md5($calledClass . '.' . $calledMethod);
+
+        // Disabling cache because it's causing some weird issue with _a()
+        // - if caching is enabled, phpunit jobs strangely fail
+        // - if caching is disabled, phpunit runs a couple of tests, cancel, then re-enabled
+        //   caching, then things strangely work
+        // - didn't look to far into it, though it seemed like the memroy cache was somehow problematic?
+        //   (could be wrong there)
+
         // use memory cache first, then disk cache
-        if (!array_key_exists($key, $this->methodDataCache)) {
-            $cache = $this->getCache();
-            if ($cache && $cache->has($key)) {
-                $methodData = $cache->get($key);
-            } else {
-                $reflClass = new ReflectionClass($calledClass);
-                try {
-                    $reflMethod = $reflClass->getMethod($calledMethod);
-                    $methodData = $this->getMethodData($reflClass, $reflMethod);
-                } catch (ReflectionException $e) {
-                    $methodData = null;
-                }
-                if ($cache) {
-                    $cache->set($key, $methodData);
-                }
-            }
-            $this->methodDataCache[$key] = $methodData;
+        // $key = md5($calledClass . '.' . $calledMethod);
+        // if (!array_key_exists($key, $this->methodDataCache)) {
+        //     $cache = $this->getCache();
+        //     $cache = null;
+        //     if ($cache && $cache->has($key)) {
+        //         $methodData = $cache->get($key);
+        //     } else {
+        //         $reflClass = new ReflectionClass($calledClass);
+        //         try {
+        //             $reflMethod = $reflClass->getMethod($calledMethod);
+        //             $methodData = $this->getMethodData($reflClass, $reflMethod);
+        //         } catch (ReflectionException $e) {
+        //             $methodData = null;
+        //         }
+        //         if ($cache) {
+        //             $cache->set($key, $methodData);
+        //         }
+        //     }
+        //     $this->methodDataCache[$key] = $methodData;
+        // }
+        // $methodData = $this->methodDataCache[$key];
+
+        // don't bother caching, more reliable
+        $reflClass = new ReflectionClass($calledClass);
+        try {
+            $reflMethod = $reflClass->getMethod($calledMethod);
+            $methodData = $this->getMethodData($reflClass, $reflMethod);
+        } catch (ReflectionException $e) {
+            $methodData = null;
         }
-        $methodData = $this->methodDataCache[$key];
+
         return [
             'callingFile' => $callingFile,
             'callingLine' => $callingLine,

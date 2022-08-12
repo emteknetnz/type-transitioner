@@ -224,7 +224,10 @@ class CodeUpdater extends Singleton
             }
         }
         $config = Config::getInstance();
-        if (!$config->get(Config::CODE_UPDATE_A) && !$config->get(Config::CODE_UPDATE_C)) {
+        if (!$config->get(Config::CODE_UPDATE_A) &&
+            !$config->get(Config::CODE_UPDATE_C) &&
+            !$config->get(Config::CODE_UPDATE_R)
+        ) {
             return;
         }
         $methodAnalyser = MethodAnalyser::getInstance();
@@ -424,11 +427,12 @@ class CodeUpdater extends Singleton
                         continue;
                     }
                     $returnedCode = substr($code, $start + 7, $end - $start - 7);
-                    $ret = '$_r';
-                    if (preg_match('#^(\$[^\s]+);#', $returnedCode . ';', $m)) {
-                        if (substr($m[1], -1, 1) != ')') {
-                            $ret = $m[1];
-                        }
+                    if (preg_match('#^(\$[a-zA-Z0-9_]+);#', $returnedCode . ';', $m)) {
+                        // handle strange `protected function &mymethod($a)` methods that return
+                        // scalars by ref (or something like that)
+                        $ret = $m[1];
+                    } else {
+                        $ret = '$_r';
                     }
                     $code = implode('', [
                         substr($code, 0, $start),

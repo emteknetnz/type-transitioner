@@ -7,9 +7,9 @@ use emteknetnz\TypeTransitioner\MethodAnalyser;
 use emteknetnz\TypeTransitioner\TypeException;
 
 // this will get included twice
-if (!function_exists('_c')) {
+if (!function_exists('_a')) {
 
-    // used to prevent infinite loops when something in _a() or _c() calls
+    // used to prevent infinite loops when something within _a() or _c() calls
     // a framework method that contains _a() or _c()
     global $_ett_paused;
     $_ett_paused = false;
@@ -34,6 +34,7 @@ if (!function_exists('_c')) {
         $methodData = $backRefl['methodData'];
 
         $paramNames = array_keys($methodData['methodParamTypes']);
+
         for ($i = 0; $i < count($paramNames); $i++) {
             $paramName = $paramNames[$i];
             $arg = $backRefl['args'][$i] ?? null;
