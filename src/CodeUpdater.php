@@ -429,7 +429,8 @@ class CodeUpdater extends Singleton
                         continue;
                     }
                     $returnedCode = substr($code, $start + 7, $end - $start - 7);
-                    if (preg_match('#^(\$[a-zA-Z0-9_]+);#', $returnedCode . ';', $m)) {
+                    #if (preg_match('#^(\$[a-zA-Z0-9_\[\]\{\}\->:]+);#', $returnedCode . ';', $m)) {
+                    if (preg_match('#^(\$[^\s]+);#', $returnedCode . ';', $m)) {
                         $ret = $m[1];
                     } else {
                         $ret = '$_r';
