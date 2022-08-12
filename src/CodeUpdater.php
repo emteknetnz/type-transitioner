@@ -218,7 +218,7 @@ class CodeUpdater extends Singleton
         if (!$this->hasDetectedIfUpdatedCode) {
             $this->hasDetectedIfUpdatedCode = true;
             $s = file_get_contents('vendor/silverstripe/framework/src/Control/ContentNegotiator.php');
-            if (strpos($s, 'return _r(') !== false) {
+            if (strpos($s, 'return $_r') !== false) {
                 $this->hasUpdatedCode = true;
                 return;
             }
@@ -421,18 +421,24 @@ class CodeUpdater extends Singleton
                     $start = $returnStatement->getStartFilePos();
                     $end = $returnStatement->getEndFilePos();
                     // statement already has an _r() function
-                    if (substr($code, $start + 7, 3) == '_r(') {
+                    if (substr($code, $start - 5, 3) == '$_r') {
                         continue;
                     }
                     // no return value
                     if (substr($code, $start, 7) == 'return;') {
                         continue;
                     }
+                    $returnedCode = substr($code, $start + 7, $end - $start - 7);
+                    if (preg_match('#^(\$[a-zA-Z0-9_]+)#', $returnedCode, $m)) {
+                        $ret = $m[1];
+                    } else {
+                        $ret = '$_r';
+                    }
                     $code = implode('', [
                         substr($code, 0, $start),
-                        'return _r(',
-                        substr($code, $start + 7, $end - $start - 7),
-                        ')',
+                        '$_r = ',
+                        $returnedCode,
+                        ';_r($_r);return ' . $ret,
                         substr($code, $end),
                     ]);
                     // only do one return statement at a time otherwise things will break when
