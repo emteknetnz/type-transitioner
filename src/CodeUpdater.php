@@ -344,11 +344,6 @@ class CodeUpdater extends Singleton
             if ($config->get(Config::CODE_UPDATE_R)) {
                 $oldContents = $contents;
                 $contents = $this->rewriteReturnStatements($contents, $path);
-                // hardcoded fix to a strange ref method
-                // protected function &nestedValueRef($name, &$source)
-                if (strpos($path, 'silverstripe/framework/src/Control/Session.php') !== false) {
-                    $contents = str_replace('return _r($var);', '_r($var);return $var;', $contents);
-                }
                 if ($oldContents != $contents) {
                     $changed = true;
                 }
@@ -429,11 +424,11 @@ class CodeUpdater extends Singleton
                         continue;
                     }
                     $returnedCode = substr($code, $start + 7, $end - $start - 7);
-                    #if (preg_match('#^(\$[a-zA-Z0-9_\[\]\{\}\->:]+);#', $returnedCode . ';', $m)) {
+                    $ret = '$_r';
                     if (preg_match('#^(\$[^\s]+);#', $returnedCode . ';', $m)) {
-                        $ret = $m[1];
-                    } else {
-                        $ret = '$_r';
+                        if (substr($m[1], -1, 1) != ')') {
+                            $ret = $m[1];
+                        }
                     }
                     $code = implode('', [
                         substr($code, 0, $start),
