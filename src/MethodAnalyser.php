@@ -175,6 +175,8 @@ class MethodAnalyser extends Singleton implements Flushable
             // if calling from constants.php on boot, Injector Manifest and other things
             // won't be available
             return null;
+        } catch (\Error $e) {
+            return null;
         }
     }
 
