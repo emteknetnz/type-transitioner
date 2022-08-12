@@ -429,16 +429,16 @@ class CodeUpdater extends Singleton
                         continue;
                     }
                     $returnedCode = substr($code, $start + 7, $end - $start - 7);
-                    if (preg_match('#^(\$[a-zA-Z0-9_]+)#', $returnedCode, $m)) {
+                    if (preg_match('#^(\$[a-zA-Z0-9_]+);#', $returnedCode . ';', $m)) {
                         $ret = $m[1];
                     } else {
                         $ret = '$_r';
                     }
                     $code = implode('', [
                         substr($code, 0, $start),
-                        '$_r = ',
+                        '$_r = (',
                         $returnedCode,
-                        ';_r($_r);return ' . $ret,
+                        ');_r($_r);return ' . $ret,
                         substr($code, $end),
                     ]);
                     // only do one return statement at a time otherwise things will break when

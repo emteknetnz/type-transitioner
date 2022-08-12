@@ -89,10 +89,10 @@ if (!function_exists('_c')) {
     {
         global $_ett_paused;
         if ($_ett_paused) {
-            return $returnValue;
+            return;
         }
         if (CodeUpdater::getInstance()->isUpdatingCode()) {
-            return $returnValue;
+            return;
         }
         $_ett_paused = true;
         $methodAnalyser = MethodAnalyser::getInstance();
@@ -111,7 +111,6 @@ if (!function_exists('_c')) {
             $returnType
         ]));
         $_ett_paused = false;
-        return $returnValue;
     }
 
     // cast()
