@@ -80,6 +80,6 @@ class Logger extends Singleton
             $this->time = time();
         }
         $time = $this->time;
-        return str_replace('//', '/', BASE_PATH . "/artifacts/ett-combined/ett-$time.txt");
+        return str_replace('//', '/', BASE_PATH . "/artifacts/ett.txt");
     }
 }
