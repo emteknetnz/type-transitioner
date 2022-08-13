@@ -35,6 +35,8 @@ class Reporter
         // remove header line
         array_shift($lines);
 
+        // TODO: update this file - was all-written with dockblocks in mind, which is now somewhat irrelevant
+
         // (dynamic) -> string -- no docblock
         // (string) -> null -- null values being passed in (solved by _c() casting)
         // (string>) -> int -- wrong docblock / need to update method call
@@ -58,6 +60,7 @@ class Reporter
                 $paramType,
                 $argType
             ) = $data;
+
             // docblock param is mixed, so arg can be anything
             if ($paramType == 'mixed') {
                 continue;
@@ -129,7 +132,10 @@ class Reporter
 
                         $c++;
                         if ($c < 100) {
-                            CodeUpdater::getInstance()->updateDocblock($calledClass, $calledMethod, $paramName, $paramType, $argTypes);
+                            if (false) {
+                                // this messes up some files - see CodeUpdate::updateDocblock()
+                                CodeUpdater::getInstance()->updateDocblock($calledClass, $calledMethod, $paramName, $paramType, $argTypes);
+                            }
                         }
                     }
                 }

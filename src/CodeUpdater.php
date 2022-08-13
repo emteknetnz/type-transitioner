@@ -90,6 +90,7 @@ class CodeUpdater extends Singleton
         return str_replace(['///', '//'], '/', BASE_PATH . '/' . $relPath);
     }
 
+    // ! this is broken, adds messes up files DataObjectSchema.php, ArrayLib.php, adds in a bunch of spammy use imports
     public function updateDocblock(
         string $calledClass,
         string $calledMethod,
@@ -354,6 +355,7 @@ class CodeUpdater extends Singleton
             if (!$changed) {
                 continue;
             }
+
             echo "Code wrote for $path\n";
             file_put_contents($path, $contents);
             $this->updatingCode = false;
