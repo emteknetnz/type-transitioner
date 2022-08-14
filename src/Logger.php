@@ -57,18 +57,22 @@ class Logger extends Singleton
         file_put_contents($path, '');
     }
 
-    private function getHeaderLine(): string
+   private function getHeaderLine(): string
     {
         return implode(',', [
+            'type',
             'callingFile',
             'callingLine',
             'calledClass',
             'calledMethod',
             'paramName',
-            'paramWhere',
-            'paramType',
+            'paramFlags',
+            'paramStrongType',
+            'paramDocblockType',
             'argType',
-            'returnType'
+            'returnStrongType',
+            'returnDocblockType',
+            'returnedType'
         ]);
     }
 
@@ -79,7 +83,6 @@ class Logger extends Singleton
         if (!$this->time) {
             $this->time = time();
         }
-        $time = $this->time;
         return str_replace('//', '/', BASE_PATH . "/artifacts/ett.txt");
     }
 }

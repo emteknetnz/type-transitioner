@@ -38,47 +38,41 @@ if (!function_exists('_a')) {
         for ($i = 0; $i < count($paramNames); $i++) {
             $paramName = $paramNames[$i];
             $arg = $backRefl['args'][$i] ?? null;
-            $flags = $methodData['methodParamFlags'][$paramName];
+            $paramFlags = $methodData['methodParamFlags'][$paramName];
             // null optional args are a non issue, will use default which assumed to always be valid
-            if (is_null($arg) && ($flags & MethodAnalyser::ETT_OPTIONAL) == MethodAnalyser::ETT_OPTIONAL) {
-                continue;
-            }
-            // null by reference arguments can start life as undefined and become a return var
-            // of sorts e.g. $m in preg_match($rx, $subject, $m);
-            if (is_null($arg) && ($flags & MethodAnalyser::ETT_REFERENCE) == MethodAnalyser::ETT_REFERENCE) {
-                continue;
-            }
-            // variadic args are always a mixed array, no need to validate
-            if (($flags & MethodAnalyser::ETT_VARIADIC) == MethodAnalyser::ETT_VARIADIC) {
-                continue;
-            }
-            // strongly typed method params are a non-issue since they throw exceptions
-            if ($methodData['methodParamTypes'][$paramName] != 'dynamic') {
-                continue;
-            }
-            $docBlockTypeStr = $methodData['docblockParams'][$paramName] ?? '';
-            if ($docBlockTypeStr != '') {
-                $paramType = $docBlockTypeStr;
-                $paramWhere = 'docblock';
-            } else {
-                $paramType = 'dynamic';
-                $paramWhere = 'undocumented';
-            }
-            $argType = $methodAnalyser->getArgType($arg);
-            // arg matches dockblock type, no need to log
-            // if ($methodAnalyser->argMatchesDockblockTypeStr($arg, $docBlockTypeStr)) {
+            // if (is_null($arg) && ($flags & MethodAnalyser::ETT_OPTIONAL) == MethodAnalyser::ETT_OPTIONAL) {
             //     continue;
             // }
-            $logger->writeLine(implode(',', [
+            // null by reference arguments can start life as undefined and become a return var
+            // of sorts e.g. $m in preg_match($rx, $subject, $m);
+            // if (is_null($arg) && ($flags & MethodAnalyser::ETT_REFERENCE) == MethodAnalyser::ETT_REFERENCE) {
+            //     continue;
+            // }
+            // variadic args are always a mixed array, no need to validate
+            // if (($paramFlags & MethodAnalyser::ETT_VARIADIC) == MethodAnalyser::ETT_VARIADIC) {
+            //     continue;
+            // }
+            // strongly typed method params are a non-issue since they throw exceptions
+            // if ($methodData['methodParamTypes'][$paramName] != 'DYNAMIC') {
+            //     continue;
+            // }
+            $paramStrongType = $methodData['methodParamTypes'][$paramName] ?? '';
+            $paramDocblockType = $methodData['docblockParams'][$paramName] ?? '';
+            $argType = $methodAnalyser->getArgType($arg);
+            $logger->writeLine(implode("\t", [
+                'ARG',
                 $backRefl['callingFile'],
                 $backRefl['callingLine'],
                 $backRefl['calledClass'],
                 $backRefl['calledMethod'],
                 $paramName,
-                $paramWhere,
-                $paramType,
+                $paramFlags,
+                $paramStrongType,
+                $paramDocblockType,
                 $argType,
-                ''
+                '',
+                '',
+                '',
             ]));
         }
         $_ett_paused = false;
@@ -99,8 +93,9 @@ if (!function_exists('_a')) {
         $methodAnalyser = MethodAnalyser::getInstance();
         $logger = Logger::getInstance();
         $backRefl = $methodAnalyser->getBacktraceReflection();
-        $returnType = $methodAnalyser->getArgType($returnValue);
-        $logger->writeLine(implode(',', [
+        $returnedType = $methodAnalyser->getArgType($returnValue);
+        $logger->writeLine(implode("\t", [
+            'RETURN',
             $backRefl['callingFile'],
             $backRefl['callingLine'],
             $backRefl['calledClass'],
@@ -109,7 +104,10 @@ if (!function_exists('_a')) {
             '',
             '',
             '',
-            $returnType
+            '',
+            $backRefl['methodData']['methodReturn'] ?? '',
+            $backRefl['methodData']['docblockReturn'] ?? '',
+            $returnedType
         ]));
         $_ett_paused = false;
     }

@@ -290,9 +290,8 @@ class CodeUpdater extends Singleton
                 if ($data['abstract']) {
                     return false;
                 }
-                $hasDynamicParams = !empty(array_filter($data['methodParamTypes'], fn(string $type) => $type == 'dynamic'));
-                // TODO: return types
-                // return $hasDynamicParams || $o['methodReturn'] == 'dynamic';
+                $hasDynamicParams = !empty(array_filter($data['methodParamTypes'], fn(string $type) => $type == 'DYNAMIC'));
+                // TODO: return types// return $hasDynamicParams || $o['methodReturn'] == 'DYNAMIC';
                 return $hasDynamicParams;
             });
             /** @var array $m */
@@ -308,7 +307,7 @@ class CodeUpdater extends Singleton
                 foreach ($methodData['methodParamTypes'] as $paramName => $methodParamType) {
                     $paramNum++;
                     $flags = $methodData['methodParamFlags'][$paramName];
-                    if ($methodParamType != 'dynamic') {
+                    if ($methodParamType != 'DYNAMIC') {
                         continue;
                     }
                     // if (($methodData['methodParamFlags'][$paramName] & ETT_REFERENCE) == ETT_REFERENCE) {
@@ -322,11 +321,11 @@ class CodeUpdater extends Singleton
                     // if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
                     //     continue;
                     // }
-                    $docblockTypeStr = $methodData['docblockParams'][$paramName] ?? 'dynamic';
+                    $docblockTypeStr = $methodData['docblockParams'][$paramName] ?? 'DYNAMIC';
                     if (strpos($docblockTypeStr, 'mixed') !== false) {
                         continue;
                     }
-                    if ($docblockTypeStr != 'dynamic') {
+                    if ($docblockTypeStr != 'DYNAMIC') {
                         $docblockTypeStr = $methodAnalyser->cleanDocblockTypeStr($docblockTypeStr);
 
                         if ($config->get(Config::CODE_UPDATE_C)) {

@@ -2,12 +2,75 @@
 
 namespace emteknetnz\TypeTransitioner;
 
+use Exception;
 use PhpParser\Builder\Method;
 
 // Parses log file and creates report
 class Reporter
 {
     function report()
+    {
+        $path = BASE_PATH . '/artifacts/ett.txt';
+        if (!file_exists($path)) {
+            echo "Missing $path\n";
+            die;
+        }
+        $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
+
+        // remove header line
+        array_shift($lines);
+
+        $l = 0;
+        foreach ($lines as $line) {
+            $l++;
+            if (empty($line)) {
+                continue;
+            }
+            $data = explode("\t", $line);
+            if (count($data) < 12) {
+                var_dump($l);
+                var_dump($line);die;
+            }
+            list(
+                // ARG|RETURN
+                $type,
+                // only used for updating method calls after making strong types:
+                $callingFile,
+                $callingLine,
+                // used for both making string param and return types:
+                $calledClass,
+                $calledMethod,
+                // used for making strong param types:
+                $paramName,
+                $paramFlags,
+                $paramStrongType,
+                $paramDocblockType,
+                $argType,
+                // used for making strong return types:
+                $returnStrongType,
+                $returnDocblockType,
+                $returnedType
+            ) = $data;
+            print_r([
+                $type,
+                $callingFile,
+                $callingLine,
+                $calledClass,
+                $calledMethod,
+                $paramName,
+                $paramFlags,
+                $paramStrongType,
+                $paramDocblockType,
+                $argType,
+                $returnStrongType,
+                $returnDocblockType,
+                $returnedType
+            ]);
+            
+        }
+    }
+
+    function report_legacy()
     {
         $dir = BASE_PATH . '/ett-combined';
         $combined = false;
@@ -82,15 +145,15 @@ class Reporter
             }
 
             $call = "{$callingFile}:{$callingLine}";
-            if ($paramType == 'dynamic') {
+            if ($paramType == 'DYNAMIC') {
                 $classMethodsWithoutDocblocks[$calledClass][$calledMethod][$paramName][$argType] ??= [];
                 $classMethodsWithoutDocblocks[$calledClass][$calledMethod][$paramName][$argType][] = $call;
             }
-            if ($paramType != 'dynamic' && $argType == 'null') {
+            if ($paramType != 'DYNAMIC' && $argType == 'null') {
                 $classMethodsWithDocblocksPassedNull[$calledClass][$calledMethod][$paramName] ?? [];
                 $classMethodsWithDocblocksPassedNull[$calledClass][$calledMethod][$paramName][$paramType][] = $call;
             }
-            if ($paramType != 'dynamic') { //  && $argType != 'null'
+            if ($paramType != 'DYNAMIC') { //  && $argType != 'null'
                 // possibly combine this with $classMethodsWithDocblocksPassedNull, or at least
                 // just filter out when `null` is the only $argType that's wrong
                 $classMethodsWrongDocblocks[$calledClass][$calledMethod][$paramName][$paramType][$argType] ??= [];

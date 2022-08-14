@@ -70,12 +70,12 @@ class MethodAnalyser extends Singleton implements Flushable
             array_map(function($p) {
                 if ($p->isVariadic()) {
                     // ... splat operator
-                    return 'variadic';
+                    return 'VARIADIC';
                 }
                 if ($p->hasType()) {
                     return $p->getType()->getName();
                 }
-                return 'dynamic';
+                return 'DYNAMIC';
             }, $reflParams)
         );
         $methodParamFlags = array_combine(
@@ -94,10 +94,15 @@ class MethodAnalyser extends Singleton implements Flushable
                 return $flags;
             }, $reflParams
         ));
+        foreach (array_keys($methodParams) as $paramName) {
+            if (!isset($docblockParams[$paramName])) {
+                $docblockParams[$paramName] = 'DYNAMIC';
+            }
+        }
 
         preg_match('#@return ([^ ]+)#', $reflDocblock, $m);
-        $docblockReturn = $m[1] ?? 'missing';
-        $methodReturn = $reflReturn ? $reflReturn->getName() : 'dynamic';
+        $docblockReturn = trim($m[1] ?? 'DYNAMIC');
+        $methodReturn = $reflReturn ? $reflReturn->getName() : 'DYNAMIC';
 
         return [
             'namespace' => $reflClass->getNamespaceName(),
