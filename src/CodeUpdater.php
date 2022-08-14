@@ -7,16 +7,6 @@ use Exception;
 use ReflectionClass;
 use PhpParser\Error;
 use PhpParser\Lexer;
-use PhpParser\Node\Arg;
-use PhpParser\Node\Expr;
-use PhpParser\Node\Expr\ArrayDimFetch;
-use PhpParser\Node\Expr\ClassConstFetch;
-use PhpParser\Node\Expr\ConstFetch;
-use PhpParser\Node\Expr\FuncCall;
-use PhpParser\Node\Expr\MethodCall;
-use PhpParser\Node\Expr\PropertyFetch;
-use PhpParser\Node\Expr\StaticCall;
-use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Stmt\Return_;
 use PhpParser\ParserFactory;
 use PhpParser\Node\Stmt\Class_;
@@ -31,6 +21,25 @@ class CodeUpdater extends Singleton
     private $hasUpdatedCode = false;
 
     private $hasDetectedIfUpdatedCode = false;
+
+    private $moduleDir = 'vendor/silverstripe/config'; // << somewhat tmp
+
+    private function detectIfUpdatedCode(): void
+    {
+        if ($this->hasDetectedIfUpdatedCode) {
+            return;
+        }
+        $this->hasDetectedIfUpdatedCode = true;
+        if ($this->moduleDir == 'vendor/silverstripe/config') {
+            $s = file_get_contents('vendor/silverstripe/config/src/Collections/CachedConfigCollection.php');
+        } else {
+            $s = file_get_contents('vendor/silverstripe/framework/src/Control/ContentNegotiator.php');
+        }
+        if (strpos($s, 'return $_r') !== false) {
+            $this->hasUpdatedCode = true;
+            return;
+        }
+    }
 
     public function isUpdatingCode(): bool
     {
@@ -211,18 +220,11 @@ class CodeUpdater extends Singleton
         echo "Update docblock params for $calledClass::$calledMethod\n";
     }
 
-    public function updateCode()
+    public function updateCode(): void
     {
+        $this->detectIfUpdatedCode();
         if ($this->hasUpdatedCode) {
             return;
-        }
-        if (!$this->hasDetectedIfUpdatedCode) {
-            $this->hasDetectedIfUpdatedCode = true;
-            $s = file_get_contents('vendor/silverstripe/framework/src/Control/ContentNegotiator.php');
-            if (strpos($s, 'return $_r') !== false) {
-                $this->hasUpdatedCode = true;
-                return;
-            }
         }
         $config = Config::getInstance();
         if (!$config->get(Config::CODE_UPDATE_A) &&
@@ -238,7 +240,8 @@ class CodeUpdater extends Singleton
             // writing _a() is dev only, so is behat
             $this->updateBehatTimeout();
         }
-        $path = $this->absPath('vendor/silverstripe/framework');
+        // $path = $this->absPath('vendor/silverstripe/framework');
+        $path = $this->absPath('vendor/silverstripe/config');
         if (!file_exists($path)) {
             // Running CI on framework module
             $path = str_replace('//', '/', BASE_PATH);
