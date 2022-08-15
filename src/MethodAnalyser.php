@@ -233,14 +233,28 @@ class MethodAnalyser extends Singleton implements Flushable
         // }
         // $methodData = $this->methodDataCache[$key];
 
-        // don't bother caching, more reliable
-        $reflClass = new ReflectionClass($calledClass);
+        // Memory only caching
         try {
+            $reflClass = new ReflectionClass($calledClass);
             $reflMethod = $reflClass->getMethod($calledMethod);
-            $methodData = $this->getMethodData($reflClass, $reflMethod);
+            $key = md5($calledClass . '.' . $calledMethod);
+            if (!array_key_exists($key, $this->methodDataCache)) {
+                $methodData = $this->getMethodData($reflClass, $reflMethod);
+                $this->methodDataCache[$key] = $methodData;
+            }
+            $methodData = $this->methodDataCache[$key];
         } catch (ReflectionException $e) {
             $methodData = null;
         }
+
+        // No caching, more reliable
+        // $reflClass = new ReflectionClass($calledClass);
+        // try {
+        //     $reflMethod = $reflClass->getMethod($calledMethod);
+        //     $methodData = $this->getMethodData($reflClass, $reflMethod);
+        // } catch (ReflectionException $e) {
+        //     $methodData = null;
+        // }
 
         return [
             'callingFile' => $callingFile,
