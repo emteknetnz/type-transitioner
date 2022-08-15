@@ -16,21 +16,16 @@ class Reporter
             die;
         }
         $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
-
         // remove header line
         array_shift($lines);
 
-        $l = 0;
+        $res = [];
+
         foreach ($lines as $line) {
-            $l++;
             if (empty($line)) {
                 continue;
             }
             $data = explode("\t", $line);
-            if (count($data) < 12) {
-                var_dump($l);
-                var_dump($line);die;
-            }
             list(
                 // ARG|RETURN
                 $type,
@@ -51,23 +46,26 @@ class Reporter
                 $returnDocblockType,
                 $returnedType
             ) = $data;
-            print_r([
-                $type,
-                $callingFile,
-                $callingLine,
-                $calledClass,
-                $calledMethod,
-                $paramName,
-                $paramFlags,
-                $paramStrongType,
-                $paramDocblockType,
-                $argType,
-                $returnStrongType,
-                $returnDocblockType,
-                $returnedType
-            ]);
-            
+            if ($type == 'ARG') {
+                $res[$calledClass][$calledMethod]['params'] ??= [];
+                $res[$calledClass][$calledMethod]['params'][$paramName] ??= [
+                    'paramFlags' => $paramFlags,
+                    'paramStrongType' => $paramStrongType,
+                    'paramDocblockType' => $paramDocblockType,
+                    'argTypes' => []
+                ];
+                $res[$calledClass][$calledMethod]['params'][$paramName]['argTypes'][$argType] = true;
+            }
+            if ($type == 'RETURN') {
+                $res[$calledClass][$calledMethod]['return'] ??= [
+                    'returnStrongType' => $returnStrongType,
+                    'returnDocblockType' => $returnDocblockType,
+                    'returnedTypes' => []
+                ];
+                $res[$calledClass][$calledMethod]['params'][$paramName]['returnedTypes'][$returnedType] = true;
+            }
         }
+        print_r($res);
     }
 
     function report_legacy()
