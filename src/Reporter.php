@@ -100,6 +100,10 @@ class Reporter
                 if (!$someDynamic) {
                     continue;
                 }
+                // tmp - only check framework
+                if (strpos($combined[$fqcn][$methodName]['path'], '/framework/') === false) {
+                    continue;
+                }
                 if ($combined[$fqcn][$methodName]['trace']['traced']) {
                     $traced[] = "$fqcn\\$methodName";
                 } else {
@@ -107,8 +111,10 @@ class Reporter
                 }
             }
         }
-        print_r($traced);
-        //print_r($missed);
+        print_r([
+            'traced' => count($traced),
+            'not_traced' => count($not_traced)
+        ]);
     }
 
     private function staticScanClasses(

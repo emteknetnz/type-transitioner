@@ -107,6 +107,7 @@ class MethodAnalyser extends Singleton implements Flushable
         return [
             'namespace' => $reflClass->getNamespaceName(),
             'class' => $reflClass->getName(),
+            'path' => $reflClass->getFileName(),
             'method' => $reflMethod->getName(),
             'visibility' => $visibility,
             'abstract' => $reflMethod->isAbstract(),
