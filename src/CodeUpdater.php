@@ -22,19 +22,13 @@ class CodeUpdater extends Singleton
 
     private $hasDetectedIfUpdatedCode = false;
 
-    private $moduleDir = 'vendor/silverstripe/config'; // << somewhat tmp
-
     private function detectIfUpdatedCode(): void
     {
         if ($this->hasDetectedIfUpdatedCode) {
             return;
         }
         $this->hasDetectedIfUpdatedCode = true;
-        if ($this->moduleDir == 'vendor/silverstripe/config') {
-            $s = file_get_contents('vendor/silverstripe/config/src/Collections/CachedConfigCollection.php');
-        } else {
-            $s = file_get_contents('vendor/silverstripe/framework/src/Control/ContentNegotiator.php');
-        }
+        $s = file_get_contents('vendor/silverstripe/framework/src/Control/ContentNegotiator.php');
         if (strpos($s, 'return $_r') !== false) {
             $this->hasUpdatedCode = true;
             return;
@@ -240,14 +234,21 @@ class CodeUpdater extends Singleton
             // writing _a() is dev only, so is behat
             $this->updateBehatTimeout();
         }
-        // $path = $this->absPath('vendor/silverstripe/framework');
-        $path = $this->absPath('vendor/silverstripe/config');
-        if (!file_exists($path)) {
-            // Running CI on framework module
-            $path = str_replace('//', '/', BASE_PATH);
+
+        
+        // vendor dir
+        $paths = explode("\n", shell_exec("find vendor | grep .php$"));
+        // module running ci
+        if (file_exists('src')) {
+            $path = array_merge($paths, shell_exec("find src | grep .php$"));
         }
-        $paths = explode("\n", shell_exec("find {$path} | grep .php$"));
+        if (file_exists('code')) {
+            $path = array_merge($paths, shell_exec("find code | grep .php$"));
+        }
         foreach ($paths as $path) {
+            if (strpos($path, 'vendor/') !== false && !preg_match('#vendor/(silverstripe|symbiote|dnadesign)#', $path)) {
+                continue;
+            }
             if (strpos($path, '/src/') === false && strpos($path, '/code/') === false) {
                 continue;
             }
@@ -273,6 +274,8 @@ class CodeUpdater extends Singleton
                 $reflClass = new ReflectionClass($fqcn);
             } catch (Exception $e) {
                 // sometimes the class won't exist, for instance if there's a if (!class_exists(<other_class>)) return; style check within the file
+                continue;
+            } catch (\Error $e) {
                 continue;
             }
             $methodDataArr = [];
