@@ -64,6 +64,14 @@ class CodeUpdater extends Singleton
         return '';
     }
 
+    private function getTrait(string $contents): string
+    {
+        if (preg_match('#\ntrait (.+?)[ \n]#', $contents, $m)) {
+            return $m[1];
+        }
+        return '';
+    }
+
     private function getAbsPathForClass(string $class): string
     {
         $a = explode('\\', $class);
@@ -266,9 +274,10 @@ class CodeUpdater extends Singleton
                 continue;
             }
             $namespace = $this->getNamespace($contents);
-            $class = $this->getClass($contents);
+
+            $class = $this->getClass($contents) ?: $this->getTrait($contents);
             if (!$class) {
-                // echo "Could not find class for path $path\n";
+                echo "Could not find class for path $path\n";
                 continue;
             }
             // don't update this, as apply nasty hack to this for behat
@@ -277,6 +286,7 @@ class CodeUpdater extends Singleton
             }
             $fqcn = $namespace ? "$namespace\\$class" : $class;
             try {
+                // this also works for traits
                 $reflClass = new ReflectionClass($fqcn);
             } catch (Exception $e) {
                 // sometimes the class won't exist, for instance if there's a if (!class_exists(<other_class>)) return; style check within the file
@@ -349,8 +359,12 @@ class CodeUpdater extends Singleton
                 if (empty($calls)) {
                     continue;
                 }
-                preg_match("#(?s)(function {$method} ?\(.+)#", $contents, $m);
+                preg_match("#(?s)(function &?$method ?\(.+)#", $contents, $m);
+                if (!isset($m[1])) {
+                    var_dump([__LINE__, $path, $method]);die;
+                }
                 $fncontents = $m[1];
+                $calls = array_unique($calls);
                 $callsStr = implode("\n        ", $calls);
                 $newfncontents = preg_replace('#{#', "{\n        $callsStr", $fncontents, 1);
                 $contents = str_replace($fncontents, $newfncontents, $contents);
