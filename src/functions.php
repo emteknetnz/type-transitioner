@@ -93,7 +93,11 @@ if (!function_exists('_a')) {
         $methodAnalyser = MethodAnalyser::getInstance();
         $logger = Logger::getInstance();
         $backRefl = $methodAnalyser->getBacktraceReflection();
-        $returnedType = $methodAnalyser->getArgType($returnValue);
+        if ($returnValue === '__NOTHING__' || $returnValue === '__END__') {
+            $returnedType = 'nothing';
+        } else {
+            $returnedType = $methodAnalyser->getArgType($returnValue);
+        }
         $logger->writeLine(implode("\t", [
             'RETURN',
             $backRefl['callingFile'],

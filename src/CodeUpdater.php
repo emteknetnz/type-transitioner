@@ -451,23 +451,28 @@ class CodeUpdater extends Singleton
                     }
                     // no return value
                     if (substr($code, $start, 7) == 'return;') {
-                        continue;
-                    }
-                    $returnedCode = substr($code, $start + 7, $end - $start - 7);
-                    if (preg_match('#^(\$[a-zA-Z0-9_]+);#', $returnedCode . ';', $m)) {
-                        // handle strange `protected function &mymethod($a)` methods that return
-                        // scalars by ref (or something like that)
-                        $ret = $m[1];
+                        $code = implode('', [
+                            substr($code, 0, $start),
+                            '$_r = (\'__NOTHING__\');_r($_r);return',
+                            substr($code, $end),
+                        ]);;
                     } else {
-                        $ret = '$_r';
+                        $returnedCode = substr($code, $start + 7, $end - $start - 7);
+                        if (preg_match('#^(\$[a-zA-Z0-9_]+);#', $returnedCode . ';', $m)) {
+                            // handle strange `protected function &mymethod($a)` methods that return
+                            // scalars by ref (or something like that)
+                            $ret = $m[1];
+                        } else {
+                            $ret = '$_r';
+                        }
+                        $code = implode('', [
+                            substr($code, 0, $start),
+                            '$_r = (',
+                            $returnedCode,
+                            ');_r($_r);return ' . $ret,
+                            substr($code, $end),
+                        ]);
                     }
-                    $code = implode('', [
-                        substr($code, 0, $start),
-                        '$_r = (',
-                        $returnedCode,
-                        ');_r($_r);return ' . $ret,
-                        substr($code, $end),
-                    ]);
                     // only do one return statement at a time otherwise things will break when
                     // returning a multiline function that will usually have a nested return statement
                     break;
@@ -476,6 +481,24 @@ class CodeUpdater extends Singleton
         }
         // keep calling this function until all return statements are wrapped in _r()
         if ($origCode == $code) {
+            // add __END__ return statements to the bottom of all methods
+            $ast = $this->getAst($code);
+            $classes = $this->getClasses($ast);
+            $classes = array_reverse($classes);
+            foreach ($classes as $class) {
+                // $methods = array_reverse($methods);
+                foreach ($methods as $method) {
+                    if ($method->isAbstract()) {
+                        continue;
+                    }
+                    $lines = explode("\n", $code);
+                    $code = implode("\n", array_merge(
+                        array_slice($lines, 0, $method->getEndLine() - 1),
+                        ['        $_r = \'__END__\';_r($_r);'],
+                        array_slice($lines, $method->getEndLine() - 1),
+                    ));
+                }
+            }
             return $code;
         }
         return $this->rewriteReturnStatements($code, $path);
