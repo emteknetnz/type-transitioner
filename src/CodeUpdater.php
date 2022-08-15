@@ -263,6 +263,10 @@ class CodeUpdater extends Singleton
             if (strpos($path, 'behat-extension') !== false) {
                 continue;
             }
+            // broke on rewrite on page + controller classes in same file
+            if (strpos($path, 'frameworktest') !== false) {
+                continue;
+            }
             if (strpos($path, '/src/') === false && strpos($path, '/code/') === false) {
                 continue;
             }
