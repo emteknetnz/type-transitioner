@@ -251,6 +251,10 @@ class CodeUpdater extends Singleton
             if (strpos($path, 'mink-facebook-web-driver') !== false) {
                 continue;
             }
+            // was having issues with behat not cleaning up 'snaked' config files
+            if (strpos($path, 'behat-extension') !== false) {
+                continue;
+            }
             if (strpos($path, '/src/') === false && strpos($path, '/code/') === false) {
                 continue;
             }
