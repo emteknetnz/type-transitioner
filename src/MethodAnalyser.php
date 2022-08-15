@@ -103,11 +103,12 @@ class MethodAnalyser extends Singleton implements Flushable
         preg_match('#@return ([^ ]+)#', $reflDocblock, $m);
         $docblockReturn = trim($m[1] ?? 'DYNAMIC');
         $methodReturn = $reflReturn ? $reflReturn->getName() : 'DYNAMIC';
-
+        $visibility = $reflMethod->isPublic() ? 'public' : ($reflMethod->isProtected() ? 'protected' : 'private');
         return [
             'namespace' => $reflClass->getNamespaceName(),
             'class' => $reflClass->getName(),
             'method' => $reflMethod->getName(),
+            'visibility' => $visibility,
             'abstract' => $reflMethod->isAbstract(),
             'docblockParams' => $docblockParams,
             'methodParamTypes' => $methodParams,
