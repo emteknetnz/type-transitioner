@@ -275,7 +275,7 @@ class CodeUpdater extends Singleton
             if ($class == 'TestSessionEnvironment') {
                 continue;
             }
-            $fqcn = "$namespace\\$class";
+            $fqcn = $namespace ? "$namespace\\$class" : $class;
             try {
                 $reflClass = new ReflectionClass($fqcn);
             } catch (Exception $e) {
@@ -289,20 +289,19 @@ class CodeUpdater extends Singleton
                 $name = $reflMethod->getName();
                 // ReflectionClass::getMethods() sorts the methods by class (lowest in the inheritance tree first)
                 // so as soon as we find an inherited method not in the $contents, we can break
-                if (!preg_match("#function {$name} ?\(#", $contents)) {
+                if (!preg_match("#function &?{$name} ?\(#", $contents)) {
                     break;
                 }
                 $methodDataArr[] = $methodAnalyser->getMethodData($reflClass, $reflMethod);
             }
             // only include methods with dynamic params or a dynamic return type
-            $methodDataArr = array_filter($methodDataArr, function (array $data) {
-                if ($data['abstract']) {
-                    return false;
-                }
-                $hasDynamicParams = !empty(array_filter($data['methodParamTypes'], fn(string $type) => $type == 'DYNAMIC'));
-                // TODO: return types// return $hasDynamicParams || $o['methodReturn'] == 'DYNAMIC';
-                return $hasDynamicParams;
-            });
+            // $methodDataArr = array_filter($methodDataArr, function (array $data) {
+            //     if ($data['abstract']) {
+            //         return false;
+            //     }
+            //     $hasDynamicParams = !empty(array_filter($data['methodParamTypes'], fn(string $type) => $type == 'DYNAMIC'));
+            //     return $hasDynamicParams;
+            // });
             /** @var array $m */
             $changed = false;
             foreach ($methodDataArr as $methodData) {
@@ -313,36 +312,37 @@ class CodeUpdater extends Singleton
                 // where parameter 1 is the first paramter
                 $paramNum = 0;
                 $method = $methodData['method'];
-                foreach ($methodData['methodParamTypes'] as $paramName => $methodParamType) {
-                    $paramNum++;
-                    $flags = $methodData['methodParamFlags'][$paramName];
-                    if ($methodParamType != 'DYNAMIC') {
-                        continue;
-                    }
-                    // if (($methodData['methodParamFlags'][$paramName] & ETT_REFERENCE) == ETT_REFERENCE) {
-                    //     continue;
-                    // }
-                    // variadic params are always an array, so no need to log
-                    if (($flags & MethodAnalyser::ETT_VARIADIC) == MethodAnalyser::ETT_VARIADIC) {
-                        continue;
-                    }
-                    // these methods are used by _c() so exclude as to not cause infinite loop
-                    // if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
-                    //     continue;
-                    // }
-                    $docblockTypeStr = $methodData['docblockParams'][$paramName] ?? 'DYNAMIC';
-                    if (strpos($docblockTypeStr, 'mixed') !== false) {
-                        continue;
-                    }
-                    if ($docblockTypeStr != 'DYNAMIC') {
-                        $docblockTypeStr = $methodAnalyser->cleanDocblockTypeStr($docblockTypeStr);
+                // foreach ($methodData['methodParamTypes'] as $paramName => $methodParamType) {
+                //     $paramNum++;
+                //     $flags = $methodData['methodParamFlags'][$paramName];
+                //     if ($methodParamType != 'DYNAMIC') {
+                //         continue;
+                //     }
+                //     // if (($methodData['methodParamFlags'][$paramName] & ETT_REFERENCE) == ETT_REFERENCE) {
+                //     //     continue;
+                //     // }
+                //     // variadic params are always an array, so no need to log
+                //     if (($flags & MethodAnalyser::ETT_VARIADIC) == MethodAnalyser::ETT_VARIADIC) {
+                //         continue;
+                //     }
+                //     // these methods are used by _c() so exclude as to not cause infinite loop
+                //     // if ($class == 'ClassInfo' && in_array($method, ['ancestry', 'class_name'])) {
+                //     //     continue;
+                //     // }
+                //     $docblockTypeStr = $methodData['docblockParams'][$paramName] ?? 'DYNAMIC';
+                //     if (strpos($docblockTypeStr, 'mixed') !== false) {
+                //         continue;
+                //     }
+                //     if ($docblockTypeStr != 'DYNAMIC') {
+                //         $docblockTypeStr = $methodAnalyser->cleanDocblockTypeStr($docblockTypeStr);
 
-                        if ($config->get(Config::CODE_UPDATE_C)) {
-                            $calls[] = "_c('{$docblockTypeStr}', {$paramName}, {$paramNum});";
-                        }
-                    }
-                    $writeA = true;
-                }
+                //         if ($config->get(Config::CODE_UPDATE_C)) {
+                //             $calls[] = "_c('{$docblockTypeStr}', {$paramName}, {$paramNum});";
+                //         }
+                //     }
+                //     $writeA = true;
+                // }
+                $writeA = true;
                 if ($config->get(Config::CODE_UPDATE_A) && $writeA) {
                     array_unshift($calls, '_a();');
                 }

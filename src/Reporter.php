@@ -111,10 +111,13 @@ class Reporter
                 }
             }
         }
+        $t = count($traced);
+        $nt = count($not_traced);
         print_r([
-            'traced' => count($traced),
-            'not_traced' => count($not_traced)
+            'traced' => $t . ' (' . round(($t / ($t + $nt) * 100), 1)  . '%)',
+            'not_traced' => $nt . ' (' . round(($nt / ($t + $nt)) * 100, 1)  . '%)',
         ]);
+        // print_r($not_traced);
     }
 
     private function staticScanClasses(
@@ -142,19 +145,29 @@ class Reporter
             $className = str_replace('.php', '', $filename);
             preg_match('#namespace ([a-zA-Z0-9\\\]+)+#', file_get_contents($path), $m);
             $namespace = $m[1] ?? '';
-            $fqcn = "$namespace\\$className";
+            $fqcn = $namespace ? "$namespace\\$className" : $className;
             try {
-                if (!class_exists($fqcn)) {
+                // don't include interfaces and things like _register_database
+                if (!class_exists($fqcn) && !trait_exists($fqcn)) {
                     continue;
                 }
             } catch (\Error $e) {
+                // Interface 'Composer\Plugin\Capability\CommandProvider' not found, etc
+                // probably this comes from dead code of some sort
                 continue;
             }
             $ret[$fqcn] = [];
+            // ReflectionClass also works on traits
             $reflClass = new ReflectionClass($fqcn);
+            $s = file_get_contents($reflClass->getFileName());
             foreach ($reflClass->getMethods() as $reflMethod) {
+                // don't count inherited methods
+                $method = $reflMethod->getName();
+                if (!preg_match("#function &?$method ?\(#", $s)) {
+                    continue;
+                }
                 $methodData = $methodAnalyser->getMethodData($reflClass, $reflMethod);
-                $ret[$fqcn][$methodData['method']] = $methodData;
+                $ret[$fqcn][$method] = $methodData;
             }
         }
         return $ret;
