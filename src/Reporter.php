@@ -4,6 +4,7 @@ namespace emteknetnz\TypeTransitioner;
 
 use Exception;
 use PhpParser\Builder\Method;
+use ReflectionClass;
 
 // Parses log file and creates report
 class Reporter
@@ -19,7 +20,7 @@ class Reporter
         // remove header line
         array_shift($lines);
 
-        $res = [];
+        $traceResults = [];
 
         foreach ($lines as $line) {
             if (empty($line)) {
@@ -47,25 +48,74 @@ class Reporter
                 $returnedType
             ) = $data;
             if ($type == 'ARG') {
-                $res[$calledClass][$calledMethod]['params'] ??= [];
-                $res[$calledClass][$calledMethod]['params'][$paramName] ??= [
+                $traceResults[$calledClass][$calledMethod]['params'] ??= [];
+                $traceResults[$calledClass][$calledMethod]['params'][$paramName] ??= [
                     'paramFlags' => $paramFlags,
                     'paramStrongType' => $paramStrongType,
                     'paramDocblockType' => $paramDocblockType,
                     'argTypes' => []
                 ];
-                $res[$calledClass][$calledMethod]['params'][$paramName]['argTypes'][$argType] = true;
+                $traceResults[$calledClass][$calledMethod]['params'][$paramName]['argTypes'][$argType] = true;
             }
             if ($type == 'RETURN') {
-                $res[$calledClass][$calledMethod]['return'] ??= [
+                $traceResults[$calledClass][$calledMethod]['return'] ??= [
                     'returnStrongType' => $returnStrongType,
                     'returnDocblockType' => $returnDocblockType,
                     'returnedTypes' => []
                 ];
-                $res[$calledClass][$calledMethod]['params'][$paramName]['returnedTypes'][$returnedType] = true;
+                $traceResults[$calledClass][$calledMethod]['return']['returnedTypes'][$returnedType] = true;
             }
         }
-        print_r($res);
+        // print_r($res);
+        $staticScan = $this->staticScanClasses();
+        $combined = clone($staticScan);
+        foreach (array_keys($combined) as $fqcn) {
+            foreach (array_keys($combined[$fqcn]) as $methodName) {
+                $combined[$fqcn][$methodName] = [
+                    'traced' => false
+                ];
+                if (!isset($traceResults[$fqcn][$methodName])) {
+                    continue;
+                }
+                $combined[$fqcn][$methodName]['traced'] = true;
+            }
+        }
+    }
+
+    private function staticScanClasses(
+        string $dir = 'vendor/silverstripe/config',
+        array &$ret = []
+    ): array {
+        $methodAnalyser = MethodAnalyser::getInstance();
+        foreach (scandir($dir) as $filename) {
+            if (in_array($filename, ['.', '..'])) {
+                continue;
+            }
+            $path = "$dir/$filename";
+            if (strpos($path, '/tests/') !== false) {
+                continue;
+            }
+            if (is_dir($path)) {
+                $this->staticScanClasses($path, $ret);
+            }
+            if (pathinfo($filename, PATHINFO_EXTENSION) != 'php') {
+                continue;
+            }
+            $className = str_replace('.php', '', $filename);
+            preg_match('#namespace ([a-zA-Z0-9\\\]+)+#', file_get_contents($path), $m);
+            $namespace = $m[1] ?? '';
+            $fqcn = "$namespace\\$className";
+            if (!class_exists($fqcn)) {
+                continue;
+            }
+            $ret[$fqcn] = [];
+            $reflClass = new ReflectionClass($fqcn);
+            foreach ($reflClass->getMethods() as $reflMethod) {
+                $methodData = $methodAnalyser->getMethodData($reflClass, $reflMethod);
+                $ret[$fqcn][$methodData['method']] = $methodData;
+            }
+        }
+        return $ret;
     }
 
     function report_legacy()
