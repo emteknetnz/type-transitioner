@@ -146,9 +146,16 @@ class Reporter
             preg_match('#namespace ([a-zA-Z0-9\\\]+)+#', file_get_contents($path), $m);
             $namespace = $m[1] ?? '';
             $fqcn = $namespace ? "$namespace\\$className" : $className;
+            $abc = false;
+            if (strpos($fqcn, 'Extensible') !== false) {
+                $abc = true;
+            }
             try {
                 // don't include interfaces and things like _register_database
                 if (!class_exists($fqcn) && !trait_exists($fqcn)) {
+                    if ($abc) {
+                        var_dump('abc');die;
+                    }
                     continue;
                 }
             } catch (\Error $e) {
