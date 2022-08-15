@@ -2,8 +2,33 @@
 
 Assist with migration from dynamic typing to static typing
 
-## Data collection test
-- github.com/emteknetnz/recipe-kitchen-sink - 4 build has this installed it - gha artifacts ett.txt files has raw data.
+## Scanning multiple modules at once
+
+Have tested this works correctly:
+
+```
+for vendorPath in vendor/*; do
+  if [[ $vendorPath =~ vendor/(silverstripe|symbiote|dnadesign) ]]; then
+    for modulePath in $vendorPath/*; do
+      if [ -f TESTS_RUNNING.json ]; then
+        rm TESTS_RUNNING.json
+      fi
+      pu $modulePath
+      if [ -f $modulePath/behat.yml ]; then
+        [[ $modulePath =~ /([a-zA-Z0-0\-]+)$ ]]
+        suite="${BASH_REMATCH[1]}"
+        bha $suite
+      fi
+    done
+  fi
+done
+
+```
+
+It will essentially skip recipe-cms and other recipes that contain testsuites instead of tests of their own, though this desirable as they would only duplicate tests of regular modules
+
+If behat has an 'unexpected alert' issue, it will not run subsequent behat tests within the modoule, however bash will still continue to the next module to run phpunit tests.
+
 
 ## Note as to why this work was not suitable for PHP8.1
 

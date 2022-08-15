@@ -11,12 +11,12 @@ class Reporter
 {
     function report()
     {
-        $path = BASE_PATH . '/artifacts/ett.txt';
+        $path = BASE_PATH . '/ett/ett.txt';
         if (!file_exists($path)) {
             echo "Missing $path\n";
             die;
         }
-        $lines = explode("\n", file_get_contents(BASE_PATH . '/artifacts/ett.txt'));
+        $lines = explode("\n", file_get_contents(BASE_PATH . '/ett/ett.txt'));
         // remove header line
         array_shift($lines);
 

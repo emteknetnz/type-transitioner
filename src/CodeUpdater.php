@@ -234,8 +234,6 @@ class CodeUpdater extends Singleton
             // writing _a() is dev only, so is behat
             $this->updateBehatTimeout();
         }
-
-        
         // vendor dir
         $paths = explode("\n", shell_exec("find vendor | grep .php$"));
         // module running ci
@@ -247,6 +245,10 @@ class CodeUpdater extends Singleton
         }
         foreach ($paths as $path) {
             if (strpos($path, 'vendor/') !== false && !preg_match('#vendor/(silverstripe|symbiote|dnadesign)#', $path)) {
+                continue;
+            }
+            // adding in _a() causes issue with behat for mink-facebook-web-driver
+            if (strpos($path, 'mink-facebook-web-driver') !== false) {
                 continue;
             }
             if (strpos($path, '/src/') === false && strpos($path, '/code/') === false) {

@@ -83,6 +83,6 @@ class Logger extends Singleton
         if (!$this->time) {
             $this->time = time();
         }
-        return str_replace('//', '/', BASE_PATH . "/artifacts/ett.txt");
+        return str_replace('//', '/', BASE_PATH . "/ett/ett.txt");
     }
 }
