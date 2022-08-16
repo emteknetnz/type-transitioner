@@ -307,7 +307,7 @@ class Reporter
         $dbt = implode('|', $docblockTypes);
         if ($dbt != 'object' && $dbt != 'mixed' && $argType != 'null') {
             $o = "argType: $argType // docblock: $dbt";
-            echo "$o\n";
+            // echo "$o\n";
             if ($o == 'SilverStripe\Control\RSS\RSSFeed---DataObject|array') {
                 $a=1;
             }
@@ -406,7 +406,12 @@ class Reporter
             $ret[$fqcn] = [];
             // ReflectionClass also works on traits
             $reflClass = new ReflectionClass($fqcn);
-            $s = file_get_contents($reflClass->getFileName());
+            $filename = $reflClass->getFileName();
+            if (!$filename) {
+                // e.g. Exception
+                continue;
+            }
+            $s = file_get_contents($filename);
             foreach ($reflClass->getMethods() as $reflMethod) {
                 // don't count inherited methods
                 $method = $reflMethod->getName();
