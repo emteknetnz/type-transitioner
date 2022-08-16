@@ -27,6 +27,7 @@ class DevBuildExtension extends DataExtension
 {
     public function onAfterBuild()
     {
-        CodeUpdater::getInstance()->updateCode();
+        // use CodeUpdateTask instead
+        // CodeUpdater::getInstance()->updateCode();
     }
 }

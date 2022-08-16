@@ -14,6 +14,7 @@ use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\If_;
 use PhpParser\Node\Stmt\Namespace_;
 
+// This is used to add _a() and _r() statements to code which is used for tracing
 class CodeUpdater extends Singleton
 {
     private $updatingCode = false;
