@@ -5,10 +5,13 @@ namespace emteknetnz\TypeTransitioner;
 use Exception;
 use PhpParser\Builder\Method;
 use ReflectionClass;
+use SilverStripe\Core\ClassInfo;
 
 // Parses log file and creates report
 class Reporter
 {
+    private $userDefinedClassesAndInterfaces = null;
+
     function report()
     {
         $path = BASE_PATH . '/ett/ett.txt';
@@ -66,7 +69,7 @@ class Reporter
                 $traceResults[$calledClass][$calledMethod]['return']['returnedTypes'][$returnedType] = true;
             }
         }
-        // print_r($res);
+
         $staticScan = $this->staticScanClasses();
         $combined = $staticScan;
         foreach (array_keys($combined) as $fqcn) {
@@ -84,6 +87,8 @@ class Reporter
         }
         $traced = [];
         $not_traced = [];
+        $traced_in_docblock = [];
+        $traced_not_in_docblock = [];
         foreach (array_keys($combined) as $fqcn) {
             foreach (array_keys($combined[$fqcn]) as $methodName) {
                 // see if there are either some dynamic params or return type
@@ -105,19 +110,114 @@ class Reporter
                     continue;
                 }
                 if ($combined[$fqcn][$methodName]['trace']['traced']) {
-                    $traced[] = "$fqcn\\$methodName";
+                    $traced[] = "$fqcn::$methodName";
+                    // of those traced, what is docblock accuracy?
+                    foreach ($combined[$fqcn][$methodName]['trace']['results']['params'] ?? [] as $paramName => $paramData) {
+                        $iden = "$fqcn::$methodName:$paramName";
+                        $docblockTypes = $this->cleanDocblockTypes(explode('|', $paramData['paramDocblockType']));
+                        $docblockTypes = $this->shortTypes($docblockTypes);
+                        $argTypes = $paramData['argTypes'];
+                        foreach (array_keys($argTypes) as $argType) {
+                            $argType = $this->shortType($argType);
+                            if (in_array($argType, $docblockTypes) || in_array('mixed', $docblockTypes)) {
+                                $traced_in_docblock[] = "$iden-$argType>" . implode('|', $docblockTypes);
+                            } else {
+                                $traced_not_in_docblock[] = "$iden-$argType>" . implode('|', $docblockTypes);
+                                echo "$iden-$argType>" . implode('|', $docblockTypes). "\n";
+                            }
+                        }
+                    }
+                    // TODO: ['return']
+
+                    // if multiple dockblock types available, then it only needs to hit once
+                    // params + docblock
+                    // do we collect docblock return??
                 } else {
-                    $not_traced[] = "$fqcn\\$methodName";
+                    $not_traced[] = "$fqcn::$methodName";
+                    // of those untraced, what is docblock coverage
                 }
             }
         }
         $t = count($traced);
         $nt = count($not_traced);
+        $tid = count($traced_in_docblock);
+        $tnid = count($traced_not_in_docblock);
         print_r([
-            'traced' => $t . ' (' . round(($t / ($t + $nt) * 100), 1)  . '%)',
-            'not_traced' => $nt . ' (' . round(($nt / ($t + $nt)) * 100, 1)  . '%)',
+            'traced' => $t . ' (' . round(($t / ($t + $nt) * 100), 1) . '%)',
+            'not_traced' => $nt . ' (' . round(($nt / ($t + $nt)) * 100, 1) . '%)',
+            'traced_in_docblock' => $tid . ' (' . round(($tid / ($tid + $tnid)) * 100, 1) . '%)',
+            'traced_not_in_docblock' => $tnid . ' (' . round(($tnid / ($tid + $tnid)) * 100, 1) . '%)',
         ]);
         // print_r($not_traced);
+    }
+
+    private function argTypeIsInstanceOfDocblockType(string $argType, string $docblockType): bool
+    {
+        // making assumption that docblock types missing type don't collide
+        $shortDocblockType = $this->shortType($docblockType);
+        $classesAndInterfaces = $this->getUserDefinedClassesAndInterfaces();
+        foreach($classesAndInterfaces as $classOrInterface) {
+            $short = $this->shortType($classOrInterface);
+            if ($short != $shortDocblockType) {
+                continue;
+            }
+            if ($argType instanceof $classOrInterface) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function getUserDefinedClassesAndInterfaces(): array
+    {
+        if (!is_null($this->userDefinedClassesAndInterfaces)) {
+            return $this->userDefinedClassesAndInterfaces;
+        }
+        $this->userDefinedClassesAndInterfaces = [];
+        $rx = '#^(SilverStripe|Symbiote|DNADesign)#';
+        foreach(get_declared_classes() as $class) {
+            if (preg_match($rx, $class)) {
+                $this->userDefinedClassesAndInterfaces[] = $class;
+            }
+        }
+        foreach(get_declared_interfaces() as $interface) {
+            if (preg_match($rx, $interface)) {
+                $this->userDefinedClassesAndInterfaces[] = $interface;
+            }
+        }
+        return $this->userDefinedClassesAndInterfaces;
+    }
+
+    private function shortType(string $type): string
+    {
+        if (strpos($type, '/') === false) {
+            return $type;
+        }
+        preg_match('#\\\([a-zA-Z0-9_]+)$#', $type, $m);
+        return $m[1];
+    }
+
+    private function shortTypes(array $types): array
+    {
+        $ret = [];
+        foreach ($types as $type) {
+            $ret[] = $this->shortType($type);
+        }
+        return $ret;
+    }
+
+    private function cleanDocblockTypes(array $docblockTypes): array
+    {
+        $ret = [];
+        foreach ($docblockTypes as $docblockType) {
+            $docblockType = str_replace(['(', ')'], '', $docblockType);
+            if (strpos($docblockType, '[]') !== false) {
+                $docblockType = 'array';
+            }
+            $ret[] = $docblockType;
+        }
+        $ret = array_unique($ret);
+        return $ret;
     }
 
     private function staticScanClasses(
