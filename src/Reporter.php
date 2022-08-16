@@ -6,6 +6,9 @@ use Exception;
 use PhpParser\Builder\Method;
 use ReflectionClass;
 use SilverStripe\Core\ClassInfo;
+use SilverStripe\Core\Kernel;
+use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Core\Manifest\ClassManifest;
 
 // Parses log file and creates report
 class Reporter
@@ -90,6 +93,7 @@ class Reporter
         $traced_param_has_docblock = [];
         $traced_param_missing_docblock = [];
         $traced_arg_in_docblock = [];
+        $traced_arg_null_not_in_docblock = [];
         $traced_arg_in_docblock_as_mixed = [];
         $traced_arg_not_in_docblock = [];
         $traced_return_has_docblock = [];
@@ -101,6 +105,14 @@ class Reporter
         $not_traced_param_missing_docblock = [];
         $not_traced_return_has_docblock = [];
         $not_traced_return_missing_docblock = [];
+
+        // regerenate the class manaifest including TestOnly objects
+        // this is so that TestOnly args match a docblock with DataObject
+        $kernel = Injector::inst()->get(Kernel::class);
+        /** @var ClassManifest $classManifest */
+        $classManifest = $kernel->getClassLoader()->getManifest();
+        $classManifest->regenerate(true);
+
         foreach (array_keys($combined) as $fqcn) {
             foreach (array_keys($combined[$fqcn]) as $methodName) {
                 // see if there are either some dynamic params or return type
@@ -139,6 +151,9 @@ class Reporter
                                 foreach (array_keys($argTypes) as $argType) {
                                     if ($this->actualTypeIsInstanceOfDocblockTypes($argType, $docblockTypes, $fqcn)) {
                                         $traced_arg_in_docblock[] = $iden;
+                                        break;
+                                    } elseif ($argType === 'null') {
+                                        $traced_arg_null_not_in_docblock[] = $iden;
                                         break;
                                     } elseif (strpos($paramData['paramDocblockType'], 'mixed') !== false) {
                                         $traced_arg_in_docblock_as_mixed[] = $iden;
@@ -204,6 +219,7 @@ class Reporter
         $tphd = count($traced_param_has_docblock);
         $tpmd = count($traced_param_missing_docblock);
         $taid = count($traced_arg_in_docblock);
+        $tannid = count($traced_arg_null_not_in_docblock);
         $taidam = count($traced_arg_in_docblock_as_mixed);
         $tanid = count($traced_arg_not_in_docblock);
         $trhd = count($traced_return_has_docblock);
@@ -223,9 +239,10 @@ class Reporter
             'traced_param_has_docblock' => $tphd . ' (' . round(($tphd / ($tphd + $tpmd)) * 100, 1) . '%)',
             'traced_param_missing_docblock' => $tpmd . ' (' . round(($tpmd / ($tphd + $tpmd)) * 100, 1) . '%)',
             '--' => '',
-            'traced_arg_in_docblock' => $taid . ' (' . round(($taid / ($taid + $taidam + $tanid)) * 100, 1) . '%)',
-            'traced_arg_in_docblock_as_mixed' => $taidam . ' (' . round(($taidam / ($taid + $taidam + $tanid)) * 100, 1) . '%)',
-            'traced_arg_not_in_docblock' => $tanid . ' (' . round(($tanid / ($taid + $taidam + $tanid)) * 100, 1) . '%)',
+            'traced_arg_in_docblock' => $taid . ' (' . round(($taid / ($taid + $tannid + $taidam + $tanid)) * 100, 1) . '%)',
+            'traced_arg_null_not_in_docblock' => $tannid . ' (' . round(($tannid / ($taid + $tannid + $taidam + $tanid)) * 100, 1) . '%)',
+            'traced_arg_in_docblock_as_mixed' => $taidam . ' (' . round(($taidam / ($taid + $tannid + $taidam + $tanid)) * 100, 1) . '%)',
+            'traced_arg_not_in_docblock' => $tanid . ' (' . round(($tanid / ($taid + $tannid + $taidam + $tanid)) * 100, 1) . '%)',
             '---' => '',
             'traced_return_has_docblock' => $trhd . ' (' . round(($trhd / ($trhd + $trmd)) * 100, 1) . '%)',
             'traced_return_missing_docblock' => $trmd . ' (' . round(($trmd / ($trhd + $trmd)) * 100, 1) . '%)',
@@ -245,9 +262,13 @@ class Reporter
 
     private function actualTypeIsInstanceOfDocblockTypes(string $argType, array $docblockTypes, string $fqcn): bool
     {
-        $docblockTypeRaw = implode('', $docblockTypes);
-        if (in_array($docblockTypeRaw, ['$this', 'static', 'self']) && is_a($argType, $fqcn, true)) {
-            return true;
+        if (substr($argType, 0, 5) == 'Mock_') {
+            preg_match('#^Mock_(.+?)_[a-f0-9]{8}$#', $argType, $m);
+            $argType = $m[1];
+        }
+        if ($argType == 'nothing') {
+            // allows docblock types of void to pass
+            $argType = 'void';
         }
         $classesAndInterfaces = $this->getUserDefinedClassesAndInterfaces();
         foreach ($docblockTypes as $docblockType) {
@@ -263,8 +284,13 @@ class Reporter
             if (strtolower($docblockType) == 'integer') {
                 $docblockType = 'int';
             }
-            if ($argType == strtolower($docblockType)) {
+            if (strtolower($argType) == strtolower($docblockType)) {
                 return true;
+            }
+            if (in_array($docblockType, ['$this', 'static', 'self'])) {
+                if (is_a($argType, $fqcn, true)) {
+                    return true;
+                }
             }
             $shortDocblockType = $this->shortType($docblockType);
             foreach ($classesAndInterfaces as $classOrInterface) {
@@ -279,8 +305,8 @@ class Reporter
             }
         }
         $dbt = implode('|', $docblockTypes);
-        if ($dbt != 'object' && $dbt != 'mixed') {
-            $o = "argType: $argType / dockblock: $dbt";
+        if ($dbt != 'object' && $dbt != 'mixed' && $argType != 'null') {
+            $o = "argType: $argType // docblock: $dbt";
             echo "$o\n";
             if ($o == 'SilverStripe\Control\RSS\RSSFeed---DataObject|array') {
                 $a=1;
@@ -295,8 +321,7 @@ class Reporter
             return $this->userDefinedClassesAndInterfaces;
         }
         $this->userDefinedClassesAndInterfaces = [];
-        // including Psr for CacheInterface
-        $rx = '#^(SilverStripe|Symbiote|DNADesign|Psr)#';
+        $rx = '#^(SilverStripe|Symbiote|DNADesign|Psr\SimpleCache|Symfony\Component)#';
         foreach(get_declared_classes() as $class) {
             if (preg_match($rx, $class)) {
                 $this->userDefinedClassesAndInterfaces[] = $class;
