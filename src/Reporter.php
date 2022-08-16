@@ -88,6 +88,7 @@ class Reporter
         $traced = [];
         $not_traced = [];
         $traced_in_docblock = [];
+        $traced_in_docblock_as_mixed = [];
         $traced_not_in_docblock = [];
         foreach (array_keys($combined) as $fqcn) {
             foreach (array_keys($combined[$fqcn]) as $methodName) {
@@ -114,16 +115,15 @@ class Reporter
                     // of those traced, what is docblock accuracy?
                     foreach ($combined[$fqcn][$methodName]['trace']['results']['params'] ?? [] as $paramName => $paramData) {
                         $iden = "$fqcn::$methodName:$paramName";
-                        $docblockTypes = $this->cleanDocblockTypes(explode('|', $paramData['paramDocblockType']));
-                        $docblockTypes = $this->shortTypes($docblockTypes);
                         $argTypes = $paramData['argTypes'];
+                        $docblockTypes = $this->cleanDocblockTypes(explode('|', $paramData['paramDocblockType']));
                         foreach (array_keys($argTypes) as $argType) {
-                            $argType = $this->shortType($argType);
-                            if (in_array($argType, $docblockTypes) || in_array('mixed', $docblockTypes)) {
+                            if ($this->argTypeIsInstanceOfDocblockTypes($argType, $docblockTypes)) {
                                 $traced_in_docblock[] = "$iden-$argType>" . implode('|', $docblockTypes);
+                            } elseif (strpos($paramData['paramDocblockType'], 'mixed') !== false) {
+                                $traced_in_docblock_as_mixed[] = "$iden-$argType>" . implode('|', $docblockTypes);
                             } else {
                                 $traced_not_in_docblock[] = "$iden-$argType>" . implode('|', $docblockTypes);
-                                echo "$iden-$argType>" . implode('|', $docblockTypes). "\n";
                             }
                         }
                     }
@@ -141,28 +141,32 @@ class Reporter
         $t = count($traced);
         $nt = count($not_traced);
         $tid = count($traced_in_docblock);
+        $tidam = count($traced_in_docblock_as_mixed);
         $tnid = count($traced_not_in_docblock);
         print_r([
-            'traced' => $t . ' (' . round(($t / ($t + $nt) * 100), 1) . '%)',
-            'not_traced' => $nt . ' (' . round(($nt / ($t + $nt)) * 100, 1) . '%)',
-            'traced_in_docblock' => $tid . ' (' . round(($tid / ($tid + $tnid)) * 100, 1) . '%)',
-            'traced_not_in_docblock' => $tnid . ' (' . round(($tnid / ($tid + $tnid)) * 100, 1) . '%)',
+            'method_traced' => $t . ' (' . round(($t / ($t + $nt) * 100), 1) . '%)',
+            '- param_traced_in_docblock' => $tid . ' (' . round(($tid / ($tid + $tidam + $tnid)) * 100, 1) . '%)',
+            '- param_traced_in_docblock_as_mixed' => $tidam . ' (' . round(($tidam / ($tid + $tidam + $tnid)) * 100, 1) . '%)',
+            '- param_traced_not_in_docblock' => $tnid . ' (' . round(($tnid / ($tid + $tidam + $tnid)) * 100, 1) . '%)',
+            'method_not_traced' => $nt . ' (' . round(($nt / ($t + $nt)) * 100, 1) . '%)',
         ]);
         // print_r($not_traced);
     }
 
-    private function argTypeIsInstanceOfDocblockType(string $argType, string $docblockType): bool
+    private function argTypeIsInstanceOfDocblockTypes(string $argType, array $docblockTypes): bool
     {
-        // making assumption that docblock types missing type don't collide
-        $shortDocblockType = $this->shortType($docblockType);
+        // making assumption that user-defined docblock types missing namespace don't collide
         $classesAndInterfaces = $this->getUserDefinedClassesAndInterfaces();
-        foreach($classesAndInterfaces as $classOrInterface) {
-            $short = $this->shortType($classOrInterface);
-            if ($short != $shortDocblockType) {
-                continue;
-            }
-            if ($argType instanceof $classOrInterface) {
-                return true;
+        foreach ($docblockTypes as $docblockType) {
+            $shortDocblockType = $this->shortType($docblockType);
+            foreach($classesAndInterfaces as $classOrInterface) {
+                $short = $this->shortType($classOrInterface);
+                if (strtolower($short) != strtolower($shortDocblockType)) {
+                    continue;
+                }
+                if (is_a($argType, $classOrInterface, true)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -190,7 +194,7 @@ class Reporter
 
     private function shortType(string $type): string
     {
-        if (strpos($type, '/') === false) {
+        if (strpos($type, '\\') === false) {
             return $type;
         }
         preg_match('#\\\([a-zA-Z0-9_]+)$#', $type, $m);
