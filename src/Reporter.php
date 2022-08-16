@@ -85,11 +85,19 @@ class Reporter
                 $combined[$fqcn][$methodName]['trace']['results'] = $traceResults[$fqcn][$methodName];
             }
         }
+        $debug = [];
         $traced = [];
         $not_traced = [];
-        $traced_in_docblock = [];
-        $traced_in_docblock_as_mixed = [];
-        $traced_not_in_docblock = [];
+        $traced_param_in_docblock = [];
+        $traced_param_in_docblock_as_mixed = [];
+        $traced_param_not_in_docblock = [];
+        $traced_return_in_docblock = [];
+        $traced_return_in_docblock_as_mixed = [];
+        $traced_return_not_in_docblock = [];
+        $not_traced_param_has_docblock = [];
+        $not_traced_param_missing_docblock = [];
+        $not_traced_return_has_docblock = [];
+        $not_traced_return_missing_docblock = [];
         foreach (array_keys($combined) as $fqcn) {
             foreach (array_keys($combined[$fqcn]) as $methodName) {
                 // see if there are either some dynamic params or return type
@@ -113,47 +121,92 @@ class Reporter
                 if ($combined[$fqcn][$methodName]['trace']['traced']) {
                     $traced[] = "$fqcn::$methodName";
                     // of those traced, what is docblock accuracy?
+                    # params
                     foreach ($combined[$fqcn][$methodName]['trace']['results']['params'] ?? [] as $paramName => $paramData) {
                         $iden = "$fqcn::$methodName:$paramName";
                         $argTypes = $paramData['argTypes'];
                         $docblockTypes = $this->cleanDocblockTypes(explode('|', $paramData['paramDocblockType']));
                         foreach (array_keys($argTypes) as $argType) {
-                            if ($this->argTypeIsInstanceOfDocblockTypes($argType, $docblockTypes)) {
-                                $traced_in_docblock[] = "$iden-$argType>" . implode('|', $docblockTypes);
+                            if ($this->actualTypeIsInstanceOfDocblockTypes($argType, $docblockTypes)) {
+                                $traced_param_in_docblock[] = $iden;
                             } elseif (strpos($paramData['paramDocblockType'], 'mixed') !== false) {
-                                $traced_in_docblock_as_mixed[] = "$iden-$argType>" . implode('|', $docblockTypes);
+                                $traced_param_in_docblock_as_mixed[] = $iden;
                             } else {
-                                $traced_not_in_docblock[] = "$iden-$argType>" . implode('|', $docblockTypes);
+                                $traced_param_not_in_docblock[] = $iden;
                             }
                         }
                     }
-                    // TODO: ['return']
-
-                    // if multiple dockblock types available, then it only needs to hit once
-                    // params + docblock
-                    // do we collect docblock return??
+                    # return
+                    $returnData = $combined[$fqcn][$methodName]['trace']['results']['return'] ?? [];
+                    if (!empty($returnData)) {
+                        $iden = "$fqcn::$methodName";
+                        $returnDocblockTypes = $this->cleanDocblockTypes(explode('|', $returnData['returnDocblockType']));
+                        $returnedTypes = $returnData['returnedTypes'];
+                        foreach (array_keys($returnedTypes) as $returnedType) {
+                            if ($this->actualTypeIsInstanceOfDocblockTypes($returnedType, $returnDocblockTypes)) {
+                                $traced_return_in_docblock[] = $iden;
+                            } elseif (strpos($returnData['returnDocblockType'], 'mixed') !== false) {
+                                $traced_return_in_docblock_as_mixed[] = $iden;
+                            } else {
+                                $traced_return_not_in_docblock[] = $iden;
+                            }
+                        }
+                    }
                 } else {
                     $not_traced[] = "$fqcn::$methodName";
                     // of those untraced, what is docblock coverage
+                    $methodData = $combined[$fqcn][$methodName];
+                    foreach ($methodData['methodParamNames'] as $paramName) {
+                        $iden = "$fqcn::$methodName:$paramName";
+                        if ($methodData['docblockParams'][$paramName] != 'DYNAMIC') {
+                            $not_traced_param_has_docblock[] = $iden;
+                        } else {
+                            $not_traced_param_missing_docblock[] = $iden;
+                        }
+                    }
+                    $iden = "$fqcn::$methodName";
+                    if ($methodData['docblockReturn'] != 'DYNAMIC' || $methodData['methodReturn'] == 'void') {
+                        $not_traced_return_has_docblock[] = $iden;
+                    } else {
+                        $not_traced_return_missing_docblock[] = $iden;
+                    }
                 }
             }
         }
+        // $debug = array_unique($debug);
+        // sort($debug);
+        print_r($debug);
         $t = count($traced);
         $nt = count($not_traced);
-        $tid = count($traced_in_docblock);
-        $tidam = count($traced_in_docblock_as_mixed);
-        $tnid = count($traced_not_in_docblock);
+        $tpid = count($traced_param_in_docblock);
+        $tpidam = count($traced_param_in_docblock_as_mixed);
+        $tpnid = count($traced_param_not_in_docblock);
+        $trid = count($traced_return_in_docblock);
+        $tridam = count($traced_return_in_docblock_as_mixed);
+        $trnid = count($traced_return_not_in_docblock);
+        $nthdp = count($not_traced_param_has_docblock);
+        $ntmdp = count($not_traced_param_missing_docblock);
+        $nthdr = count($not_traced_return_has_docblock);
+        $ntmdr = count($not_traced_return_missing_docblock);
+
         print_r([
             'method_traced' => $t . ' (' . round(($t / ($t + $nt) * 100), 1) . '%)',
-            '- param_traced_in_docblock' => $tid . ' (' . round(($tid / ($tid + $tidam + $tnid)) * 100, 1) . '%)',
-            '- param_traced_in_docblock_as_mixed' => $tidam . ' (' . round(($tidam / ($tid + $tidam + $tnid)) * 100, 1) . '%)',
-            '- param_traced_not_in_docblock' => $tnid . ' (' . round(($tnid / ($tid + $tidam + $tnid)) * 100, 1) . '%)',
+            '- traced_param_in_docblock' => $tpid . ' (' . round(($tpid / ($tpid + $tpidam + $tpnid)) * 100, 1) . '%)',
+            '- traced_param_in_docblock_as_mixed' => $tpidam . ' (' . round(($tpidam / ($tpid + $tpidam + $tpnid)) * 100, 1) . '%)',
+            '- traced_param_not_in_docblock' => $tpnid . ' (' . round(($tpnid / ($tpid + $tpidam + $tpnid)) * 100, 1) . '%)',
+            '- traced_return_in_docblock' => $trid . ' (' . round(($trid / ($trid + $tridam + $trnid)) * 100, 1) . '%)',
+            '- traced_return_in_docblock_as_mixed' => $tridam . ' (' . round(($tridam / ($trid + $tridam + $trnid)) * 100, 1) . '%)',
+            '- traced_return_not_in_docblock' => $trnid . ' (' . round(($trnid / ($trid + $tridam + $trnid)) * 100, 1) . '%)',
             'method_not_traced' => $nt . ' (' . round(($nt / ($t + $nt)) * 100, 1) . '%)',
+            '- not_traced_param_has_docblock' => $nthdp . ' (' . round(($nthdp / ($nthdp + $ntmdp)) * 100, 1) . '%)',
+            '- not_traced_param_missing_docblock' => $ntmdp . ' (' . round(($ntmdp / ($nthdp + $ntmdp)) * 100, 1) . '%)',
+            '- not_traced_return_has_docblock' => $nthdr . ' (' . round(($nthdr / ($nthdr + $ntmdr)) * 100, 1) . '%)',
+            '- not_traced_return_missing_docblock' => $ntmdr . ' (' . round(($ntmdr / ($nthdr + $ntmdr)) * 100, 1) . '%)',
         ]);
         // print_r($not_traced);
     }
 
-    private function argTypeIsInstanceOfDocblockTypes(string $argType, array $docblockTypes): bool
+    private function actualTypeIsInstanceOfDocblockTypes(string $argType, array $docblockTypes): bool
     {
         // making assumption that user-defined docblock types missing namespace don't collide
         $classesAndInterfaces = $this->getUserDefinedClassesAndInterfaces();

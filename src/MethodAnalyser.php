@@ -65,6 +65,7 @@ class MethodAnalyser extends Singleton implements Flushable
 
         preg_match_all('#@param +([^ ]+)[ \t]+((?:\$)[A-Za-z0-9]+)#', $reflDocblock, $m);
         $docblockParams = array_combine($m[2], $m[1]);
+        $methodParamNames = array_map(fn($p) => '$' . $p->getName(), $reflParams);
         $methodParams = array_combine(
             array_map(fn($p) => '$' . $p->getName(), $reflParams),
             array_map(function($p) {
@@ -112,6 +113,7 @@ class MethodAnalyser extends Singleton implements Flushable
             'visibility' => $visibility,
             'abstract' => $reflMethod->isAbstract(),
             'docblockParams' => $docblockParams,
+            'methodParamNames' => $methodParamNames,
             'methodParamTypes' => $methodParams,
             'methodParamFlags' => $methodParamFlags,
             'docblockReturn' => $docblockReturn,
