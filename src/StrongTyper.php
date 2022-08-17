@@ -12,11 +12,6 @@ use PhpParser\Node\Stmt\If_;
 use PhpParser\Node\Stmt\Namespace_;
 use SilverStripe\Core\Injector\Injector;
 
-function log($s)
-{
-    StrongTyper::getInstance()->log($s);
-}
-
 // This is used to strongly type methods based on trace results ett.txt
 class StrongTyper extends Singleton
 {
@@ -37,6 +32,7 @@ class StrongTyper extends Singleton
                 continue;
             }
             $code = file_get_contents($filename);
+            $origCode = $code;
             $ast = $this->getAst($code);
             $classes = $this->getClasses($ast);
             if (empty($classes)) {
@@ -59,7 +55,7 @@ class StrongTyper extends Singleton
                     }
                     $start = $method->getStartFilePos();
                     $end = $method->getEndFilePos();
-                    $methodStr = substr($code, $start, $end);
+                    $methodStr = substr($code, $start, $end - $start + 1);
                     preg_match('#(\(.+?{)#s', $methodStr, $m);
                     $methodSig = $m[1];
                     preg_match('#\((.*?)\)#s', $methodSig, $m);
@@ -120,7 +116,7 @@ class StrongTyper extends Singleton
                         $argTypes = array_keys($argTypes);
                         $this->safety = 0;
                         $argTypes = $this->reduceToCommonAncestors($argTypes);
-                        $paramType = implode('|', array_keys($argTypes));
+                        $paramType = implode('|', $argTypes);
                         $oldParamstr = implode('', [
                             $isVariadic ? '...' : '',
                             $isReference ? '&' : '',
@@ -134,14 +130,17 @@ class StrongTyper extends Singleton
                     $code = implode('', [
                         substr($code, 0, $start),
                         $methodStr,
-                        substr($code, $end),
+                        substr($code, $end + 1),
                     ]);
-                    file_put_contents(BASE_PATH . '/debug.txt', $code);
-                    die;
                 }
             }
+            file_put_contents(BASE_PATH . '/debug.txt', $code);
+            if ($code != $origCode && count($argTypes) > 2) {
+                //die;
+            }
+            echo "Strongly typing methods in $filename\n";
+            file_put_contents($filename, $code);
         }
-        $this->printLog();
     }
 
     private function str_replace_limit_one(string $needle, string $replace, string $haystack): string
@@ -290,24 +289,5 @@ class StrongTyper extends Singleton
     private function getMethods(Class_ $class): array
     {
         return array_filter($class->stmts, fn($v) => $v instanceof ClassMethod);
-    }
-
-    // ===
-
-    private $log = [];
-
-    public function log($s)
-    {
-        $this->log[] = $s;
-    }
-
-    private function printLog()
-    {
-        $log = array_unique($this->log);
-        sort($log);
-        foreach ($log as $r) {
-            echo "$r\n";
-        }
-        die;
     }
 }
