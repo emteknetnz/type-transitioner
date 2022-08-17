@@ -2,6 +2,7 @@
 
 namespace emteknetnz\TypeTransitioner;
 
+use SilverStripe\Core\Kernel;
 use PhpParser\Error;
 use PhpParser\Lexer;
 use PhpParser\ParserFactory;
@@ -9,6 +10,7 @@ use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\If_;
 use PhpParser\Node\Stmt\Namespace_;
+use SilverStripe\Core\Injector\Injector;
 
 function log($s)
 {
@@ -22,11 +24,9 @@ class StrongTyper extends Singleton
 
     public function codeWrite()
     {
+        $this->reloadClassManifest();
         $combined = TraceResults::getInstance()->read();
         foreach (array_keys($combined) as $fqcn) {
-            foreach (array_keys($combined[$fqcn]) as $methodName) {
-                // log($fqcn . '::' . $methodName);
-            }
             $reflClass = new \ReflectionClass($fqcn);
             $filename = $reflClass->getFileName();
             if (strpos($filename, 'vendor/silverstripe/framework/') === false) {
@@ -47,7 +47,6 @@ class StrongTyper extends Singleton
                 if ($class == 'nonclass') {
                     continue;
                 }
-                //log($class->name);
                 $methods = $this->getMethods($class);
                 $methods = array_reverse($methods);
                 /** @var ClassMethod $method */
@@ -57,7 +56,6 @@ class StrongTyper extends Singleton
                     if (!$res['trace']['traced']) {
                         continue;
                     }
-                    // print_r($res);die;
                     $start = $method->getStartFilePos();
                     $end = $method->getEndFilePos();
                     $methodStr = substr($code, $start, $end);
@@ -118,46 +116,72 @@ class StrongTyper extends Singleton
                             unset($argTypes[$argType]);
                             $argTypes['?' . $argType] = true;
                         }
+                        $argTypes = array_keys($argTypes);
+                        $argTypes = $this->reduceToCommonAncestors($argTypes);
                         $paramType = implode('|', array_keys($argTypes));
-                        log($paramType);
-                        // print_r($res);
-
-                        //print_r($res);die;
-                        // log($param);
                     }
-                    // print_r([$methodSig, $paramSig, $returnSig]);die;
-                    
-                    //log($class->name . '::' . $method->name);
                 }
             }
         }
         $this->printLog();
     }
 
+    private $c=0;
+
     private function reduceToCommonAncestors(array $argTypes): array
     {
-        $scalarArgTypes = array_filter($argTypes, fn(string $argType) => preg_match('#^[a-z#', $argType));
-        $objectArgTypes = array_filter($argTypes, fn(string $argType) => preg_match('#^[A-Z#', $argType));
+        $this->c++;
+        if ($this->c > 1000) {
+            var_dump([__LINE__, 'halt']);
+            die;
+        }
+        $startCount = count($argTypes);
+        $scalarArgTypes = array_merge(array_filter($argTypes, fn(string $argType) => preg_match('#^[a-z]#', $argType)));
+        $objectArgTypes = array_merge(array_filter($argTypes, fn(string $argType) => preg_match('#^[A-Z]#', $argType)));
         if (empty($objectArgTypes) || count($objectArgTypes) == 1) {
             return $argTypes;
         }
         $reducedObjectArgTypes = [];
+        $removeArgTypes = [];
         for ($i = 0; $i < count($objectArgTypes); $i++) {
             $argTypeI = $objectArgTypes[$i];
-            for ($j = 0; $j < count($objectArgTypes); $j++) {
-                if ($i == $j) {
-                    continue;
-                }
+            $lineageI = $this->getClassLineage($argTypeI);
+            $commonAncestor = null;
+            for ($j = $i + 1; $j < count($objectArgTypes); $j++) {
                 $argTypeJ = $objectArgTypes[$j];
+                $lineageJ = $this->getClassLineage($argTypeI);
+                $intersection = array_intersect($lineageI, $lineageJ);
+                if (!empty($intersection)) {
+                    $commonAncestor = $intersection[0];
+                    $removeArgTypes[$argTypeI] = true;
+                    $removeArgTypes[$argTypeJ] = true;
+                    break;
+                }
+            }
+            if (is_null($commonAncestor)) {
+                $reducedObjectArgTypes[$argTypeI] = true;;
+            } else {
+                $reducedObjectArgTypes[$commonAncestor] = true;
             }
         }
-        return array_merge($scalarArgTypes, $reducedObjectArgTypes);
+        foreach (array_keys($removeArgTypes) as $argType) {
+            unset($reducedObjectArgTypes[$argType]);
+        }
+        $ret = array_merge($scalarArgTypes, array_keys($reducedObjectArgTypes));
+        if (count($ret) == $startCount) {
+            return $ret;
+        } else {
+            return $this->reduceToCommonAncestors($ret);
+        }
     }
 
-    private function getClassLineage(object $object){
-        $classes = array_values(class_parents($object));
-        $interfaces = array_values(class_implements($object));
-        return array_merge([get_class($object)], $classes, $interfaces);
+    private function getClassLineage(string $class): array
+    {
+        return array_merge(
+            [$class],
+            array_values(class_parents($class) ?: []) ,
+            array_values(class_implements($class) ?: [])
+        );
     }
 
     private function getClassesAndInterfaces(): array
@@ -173,6 +197,16 @@ class StrongTyper extends Singleton
             $this->classesAndInterfaces[] = $interface;
         }
         return $this->classesAndInterfaces;
+    }
+
+    private function reloadClassManifest()
+    {
+        // regerenate the class manaifest including TestOnly objects
+        // this is so that TestOnly args match a docblock with DataObject
+        $kernel = Injector::inst()->get(Kernel::class);
+        /** @var ClassManifest $classManifest */
+        $classManifest = $kernel->getClassLoader()->getManifest();
+        $classManifest->regenerate(true);
     }
 
     // ===
