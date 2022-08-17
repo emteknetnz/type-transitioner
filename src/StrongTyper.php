@@ -19,6 +19,8 @@ function log($s)
 // This is used to strongly type methods based on trace results ett.txt
 class StrongTyper extends Singleton
 {
+    private $classesAndInterfaces = null;
+
     public function codeWrite()
     {
         //         foreach (array_keys($combined[$fqcn]) as $methodName) {
@@ -74,14 +76,11 @@ class StrongTyper extends Singleton
                         }
                         preg_match('#(\$[a-zA-Z0-9_]+)#', $paramStr, $m);
                         if (!isset($m[1])) {
-                            var_dump([__LINE__, $methodSig]);die; // <<<
+                            // something too hard, such as
+                            // $searchableClasses = [SiteTree::class, File::class]
+                            continue;
                         }
                         $paramName = $m[1];
-                        try {
-                            $a = $res['methodParamTypes'][$paramName];
-                        } catch (\Error $e) {
-                            var_dump($paramStr);die;
-                        }
                         $strongType = $res['methodParamTypes'][$paramName];
                         if ($strongType != 'DYNAMIC') {
                             continue;
@@ -116,6 +115,13 @@ class StrongTyper extends Singleton
                             // null was the only traced value
                             continue;
                         }
+                        if (count($argTypes) == 0 && $hasNull) {
+                            $argType = array_keys($argTypes)[0];
+                            unset($argTypes[$argType]);
+                            $argTypes['?' . $argType] = true;
+                        }
+                        $paramType = implode('|', array_keys($argTypes));
+                        log($paramType);
                         // print_r($res);
 
                         //print_r($res);die;
@@ -128,6 +134,41 @@ class StrongTyper extends Singleton
             }
         }
         $this->printLog();
+    }
+
+    private function reduceToCommonAncestors(array $argTypes): array
+    {
+        $scalarArgTypes = array_filter($argTypes, fn(string $argType) => preg_match('#^[a-z#', $argType));
+        $objectArgTypes = array_filter($argTypes, fn(string $argType) => preg_match('#^[A-Z#', $argType));
+        if (empty($objectArgTypes) || count($objectArgTypes) == 1) {
+            return $argTypes;
+        }
+        $reducedObjectArgTypes = [];
+        for ($i = 0; $i < count($objectArgTypes); $i++) {
+            $argTypeI = $objectArgTypes[$i];
+            for ($j = 0; $j < count($objectArgTypes); $j++) {
+                if ($i == $j) {
+                    continue;
+                }
+                $argTypeJ = $objectArgTypes[$j];
+            }
+        }
+        return array_merge($scalarArgTypes, $reducedObjectArgTypes);
+    }
+
+    private function getClassesAndInterfaces(): array
+    {
+        if (!is_null($this->classesAndInterfaces)) {
+            return $this->classesAndInterfaces;
+        }
+        $this->classesAndInterfaces = [];
+        foreach(get_declared_classes() as $class) {
+            $this->classesAndInterfaces[] = $class;
+        }
+        foreach(get_declared_interfaces() as $interface) {
+            $this->classesAndInterfaces[] = $interface;
+        }
+        return $this->classesAndInterfaces;
     }
 
     // ===
