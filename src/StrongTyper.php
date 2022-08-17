@@ -58,6 +58,7 @@ class StrongTyper extends Singleton
                     $methodStr = substr($code, $start, $end - $start + 1);
                     preg_match('#(\(.+?{)#s', $methodStr, $m);
                     $methodSig = $m[1];
+                    $methodSig = str_replace('array()', '[]', $methodSig);
                     preg_match('#\((.*?)\)#s', $methodSig, $m);
                     $paramSig = $m[1];
                     preg_match('#(\).*?{)#s', $methodSig, $m);
@@ -90,8 +91,16 @@ class StrongTyper extends Singleton
                             // treat optional argtype as if it was also traced
                             preg_match('#=\s?(.+)$#', $paramStr, $m);
                             $optionalVal = $m[1] ?? '';
-                            if (strpos($optionalVal, ':') !== false) {
+                            if (strpos($optionalVal, '(') !== false) {
+                                //var_dump($optionalVal);die;
+                            }
+                            if (strpos($optionalVal, ':') !== false ||
+                                strpos($optionalVal, ',') !== false ||
+                                strpos($optionalVal, '(') !== false
+                            ) {
                                 // too hard e.g. $relativeParent = self::BASE
+                                // something weird e.g. ","
+                                // /\/(tests
                                 continue;
                             }
                             $optionalType = MethodAnalyser::getInstance()->getArgType(eval($optionalVal . ';'));
