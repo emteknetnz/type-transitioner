@@ -136,6 +136,14 @@ class StrongTyper extends Singleton
                         $newParamStr = $paramType . ' ' . $oldParamstr;
                         $methodStr = $this->str_replace_limit_one($oldParamstr, $newParamStr, $methodStr);
                     }
+                    // return
+                    if (($res['trace']['results']['return']['returnStrongType'] ?? '') == 'DYNAMIC') {
+                        $returnedTypes = array_keys($res['trace']['results']['return']['returnedTypes']);
+                        $returnedTypes = $this->reduceToCommonAncestors($returnedTypes);
+                        $newReturnSig = str_replace(')', '): ' . implode('|', $returnedTypes), $returnSig);
+                        $newReturnSig = str_replace(': nothing', ': void', $newReturnSig);
+                        $methodStr = $this->str_replace_limit_one($returnSig, $newReturnSig, $methodStr);
+                    }
                     $code = implode('', [
                         substr($code, 0, $start),
                         $methodStr,
