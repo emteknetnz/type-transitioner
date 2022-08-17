@@ -67,13 +67,21 @@ class StrongTyper extends Singleton
                     $paramSig = $m[1];
                     preg_match('#(\).*?{)#s', $methodSig, $m);
                     $returnSig = $m[1];
-                    foreach (preg_split('#, ?(?=\$)#', $paramSig) as $paramStr) {
+                    foreach (preg_split('#, ?(?=[A-Za-z\$])#', $paramSig) as $paramStr) {
                         if (empty($paramStr)) {
                             // no params
                             continue;
                         }
                         preg_match('#(\$[a-zA-Z0-9_]+)#', $paramStr, $m);
+                        if (!isset($m[1])) {
+                            var_dump([__LINE__, $methodSig]);die; // <<<
+                        }
                         $paramName = $m[1];
+                        try {
+                            $a = $res['methodParamTypes'][$paramName];
+                        } catch (\Error $e) {
+                            var_dump($paramStr);die;
+                        }
                         $strongType = $res['methodParamTypes'][$paramName];
                         if ($strongType != 'DYNAMIC') {
                             continue;
@@ -87,15 +95,28 @@ class StrongTyper extends Singleton
                         $isOptional = ($flags & MethodAnalyser::ETT_OPTIONAL) == MethodAnalyser::ETT_OPTIONAL;
                         if ($isOptional) {
                             // treat optional argtype as if it was also traced
-                            preg_match('#= ?(.+$)#', $paramStr, $m);
-                            $optionalVal = eval($m[1] . ';');
+                            preg_match('#=\s?(.+)$#', $paramStr, $m);
+                            $var = $m[1] ?? '';
+                            if (substr($var, 0, 1) !== '$') {
+                                // too hard e.g. $relativeParent = self::BASE
+                                continue;
+                            }
+                            $optionalVal = eval($var . ';');
                             $optionalType = MethodAnalyser::getInstance()->getArgType($optionalVal);
-                            $argTypes[] = $optionalType;
-                            $argTypes = array_unique($argTypes);
+                            $argTypes[$optionalType] = true;
                         }
                         $isReference = ($flags & MethodAnalyser::ETT_REFERENCE) == MethodAnalyser::ETT_REFERENCE;
                         $isVariadic = ($flags & MethodAnalyser::ETT_VARIADIC) == MethodAnalyser::ETT_VARIADIC;
-
+                        $hasNull = array_key_exists('null', $argTypes);
+                        if ($hasNull) {
+                            unset($argTypes['null']);
+                        }
+                        $argTypes = array_filter($argTypes, fn(string $argType) => $argType != 'null');
+                        if (empty($argTypes)) {
+                            // null was the only traced value
+                            continue;
+                        }
+                        // print_r($res);
 
                         //print_r($res);die;
                         // log($param);
