@@ -4,7 +4,6 @@ namespace emteknetnz\TypeTransitioner;
 
 use PhpParser\Error;
 use PhpParser\Lexer;
-use PhpParser\Node\Stmt\Return_;
 use PhpParser\ParserFactory;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassMethod;
@@ -23,7 +22,6 @@ class StrongTyper extends Singleton
 
     public function codeWrite()
     {
-        //         foreach (array_keys($combined[$fqcn]) as $methodName) {
         $combined = TraceResults::getInstance()->read();
         foreach (array_keys($combined) as $fqcn) {
             foreach (array_keys($combined[$fqcn]) as $methodName) {
@@ -154,6 +152,12 @@ class StrongTyper extends Singleton
             }
         }
         return array_merge($scalarArgTypes, $reducedObjectArgTypes);
+    }
+
+    private function getClassLineage(object $object){
+        $classes = array_values(class_parents($object));
+        $interfaces = array_values(class_implements($object));
+        return array_merge([get_class($object)], $classes, $interfaces);
     }
 
     private function getClassesAndInterfaces(): array
