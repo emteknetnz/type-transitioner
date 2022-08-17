@@ -21,6 +21,7 @@ function log($s)
 class StrongTyper extends Singleton
 {
     private $classesAndInterfaces = null;
+    private $safety = 0;
 
     public function codeWrite()
     {
@@ -88,16 +89,16 @@ class StrongTyper extends Singleton
                         }
                         $argTypes = $res['trace']['results']['params'][$paramName]['argTypes'];
                         $isOptional = ($flags & MethodAnalyser::ETT_OPTIONAL) == MethodAnalyser::ETT_OPTIONAL;
+                        $optionalVal = '';
                         if ($isOptional) {
                             // treat optional argtype as if it was also traced
                             preg_match('#=\s?(.+)$#', $paramStr, $m);
-                            $var = $m[1] ?? '';
-                            if (substr($var, 0, 1) !== '$') {
+                            $optionalVal = $m[1] ?? '';
+                            if (strpos($optionalVal, ':') !== false) {
                                 // too hard e.g. $relativeParent = self::BASE
                                 continue;
                             }
-                            $optionalVal = eval($var . ';');
-                            $optionalType = MethodAnalyser::getInstance()->getArgType($optionalVal);
+                            $optionalType = MethodAnalyser::getInstance()->getArgType(eval($optionalVal . ';'));
                             $argTypes[$optionalType] = true;
                         }
                         $isReference = ($flags & MethodAnalyser::ETT_REFERENCE) == MethodAnalyser::ETT_REFERENCE;
@@ -117,22 +118,46 @@ class StrongTyper extends Singleton
                             $argTypes['?' . $argType] = true;
                         }
                         $argTypes = array_keys($argTypes);
+                        $this->safety = 0;
                         $argTypes = $this->reduceToCommonAncestors($argTypes);
                         $paramType = implode('|', array_keys($argTypes));
+                        $oldParamstr = implode('', [
+                            $isVariadic ? '...' : '',
+                            $isReference ? '&' : '',
+                            $paramName,
+                            $optionalVal ? ' = ' . $optionalVal : ''
+                        ]);
+                        // TODO: use import statements instead of fqcn
+                        $newParamStr = $paramType . ' ' . $oldParamstr;
+                        $methodStr = $this->str_replace_limit_one($oldParamstr, $newParamStr, $methodStr);
                     }
+                    $code = implode('', [
+                        substr($code, 0, $start),
+                        $methodStr,
+                        substr($code, $end),
+                    ]);
+                    file_put_contents(BASE_PATH . '/debug.txt', $code);
+                    die;
                 }
             }
         }
         $this->printLog();
     }
 
-    private $c=0;
+    private function str_replace_limit_one(string $needle, string $replace, string $haystack): string
+    {
+        $pos = strpos($haystack, $needle);
+        if ($pos !== false) {
+            return substr_replace($haystack, $replace, $pos, strlen($needle));
+        }
+        return $haystack;
+    }
 
     private function reduceToCommonAncestors(array $argTypes): array
     {
-        $this->c++;
-        if ($this->c > 1000) {
-            var_dump([__LINE__, 'halt']);
+        $this->safety++;
+        if ($this->safety > 1000) {
+            var_dump([__LINE__, 'halt on safety']);
             die;
         }
         $startCount = count($argTypes);
@@ -143,7 +168,7 @@ class StrongTyper extends Singleton
         }
         $reducedObjectArgTypes = [];
         $removeArgTypes = [];
-        for ($i = 0; $i < count($objectArgTypes); $i++) {
+        for ($i = 0; $i < count($objectArgTypes) - 1; $i++) {
             $argTypeI = $objectArgTypes[$i];
             $lineageI = $this->getClassLineage($argTypeI);
             $commonAncestor = null;
@@ -153,8 +178,12 @@ class StrongTyper extends Singleton
                 $intersection = array_intersect($lineageI, $lineageJ);
                 if (!empty($intersection)) {
                     $commonAncestor = $intersection[0];
-                    $removeArgTypes[$argTypeI] = true;
-                    $removeArgTypes[$argTypeJ] = true;
+                    if ($commonAncestor != $argTypeI) {
+                        $removeArgTypes[$argTypeI] = true;
+                    }
+                    if ($commonAncestor != $argTypeJ) {
+                        $removeArgTypes[$argTypeJ] = true;
+                    }
                     break;
                 }
             }
@@ -177,6 +206,13 @@ class StrongTyper extends Singleton
 
     private function getClassLineage(string $class): array
     {
+        if (substr($class, 0, 5) == 'Mock_') {
+            preg_match('#^Mock_(.+?)_[a-f0-9]{8}$#', $class, $m);
+            $class = $m[1];
+        }
+        if (!class_exists($class)) {
+            return [$class];
+        }
         return array_merge(
             [$class],
             array_values(class_parents($class) ?: []) ,
