@@ -2,6 +2,15 @@
 
 Assist with migration from dynamic typing to static typing
 
+## Note
+
+`$lineageJ = $this->getClassLineage($argTypeI);` should be
+`$lineageJ = $this->getClassLineage($argTypeJ);`
+
+However running appeared to get stuck in a recursive loop
+
+However at this stage the team had alread agreed that we are not proceeding this with approach
+
 ## Scanning multiple modules at once
 
 Have tested this works correctly:
